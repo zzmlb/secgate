@@ -1,0 +1,4 @@
+recursive-include src/secgate_pkg/project *
+include VERSION
+include README.md
+include requirements.txt

@@ -1,0 +1,23 @@
+{
+  "tokens": {
+    "<YOUR_TOKEN_HEX_64>": {
+      "name": "default",
+      "created": "2026-01-01 00:00:00"
+    }
+  },
+  "ip_whitelist": [
+    "YOUR_IP/32"
+  ],
+  "protected_ports": {
+    "5000": {
+      "nginx_port": 25000,
+      "type": "standard",
+      "comment": "安全监控看板"
+    },
+    "8502": {
+      "nginx_port": 28502,
+      "type": "chainlit",
+      "comment": "SecGate AI 安全助手"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+# 运行时数据 & 敏感配置
+.credentials.json
+.pids.json
+gateway/config.json
+
+# 数据目录
+dashboard/data/
+scanner/data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# 临时文件
+.files/
+*-discussion/
+
+# 构建产物
+secgate-*.tar.gz
+
+# Claude Code
+.claude/

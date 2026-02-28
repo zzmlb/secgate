@@ -1,0 +1,1476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>安全监控看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg-primary: #0a0e27;
+            --bg-secondary: #131736;
+            --bg-card: #1a1f45;
+            --border-color: #2a3065;
+            --text-primary: #e4e7f5;
+            --text-secondary: #8892b0;
+            --accent-blue: #4fc3f7;
+            --accent-green: #66bb6a;
+            --accent-red: #ef5350;
+            --accent-yellow: #ffa726;
+            --accent-purple: #ab47bc;
+            --accent-cyan: #26c6da;
+            --glow-blue: rgba(79, 195, 247, 0.15);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        /* 顶部导航栏 */
+        .header {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, #0d1130 100%);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .header-logo {
+            width: 38px; height: 38px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px;
+            box-shadow: 0 0 20px rgba(79,195,247,0.3);
+        }
+
+        .header-title {
+            font-size: 20px;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-hostname {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .header-time {
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-family: 'Courier New', monospace;
+        }
+
+        .btn-refresh {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-refresh:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(79,195,247,0.4); }
+        .btn-refresh:active { transform: translateY(0); }
+        .btn-refresh.loading { opacity: 0.7; pointer-events: none; }
+        .btn-refresh.loading .refresh-icon { animation: spin 1s linear infinite; }
+
+        .header-link { color: var(--accent-cyan); text-decoration: none; font-size: 14px; padding: 8px 16px; border: 1px solid var(--accent-cyan); border-radius: 8px; transition: all 0.3s; }
+        .header-link:hover { background: rgba(38,198,218,0.15); }
+
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* 主内容区 */
+        .main-content {
+            padding: 24px 30px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* 标签页切换 */
+        .tab-bar {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 4px;
+            width: fit-content;
+        }
+
+        .tab-btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(79,195,247,0.3);
+        }
+
+        .tab-btn:not(.active):hover { background: rgba(136,146,176,0.1); }
+
+        .dash-tab { display: none; }
+        .dash-tab.active { display: block; }
+
+        /* 统计卡片行 */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: linear-gradient(145deg, var(--bg-card), var(--bg-secondary));
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 22px;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            border-radius: 14px 14px 0 0;
+        }
+
+        .stat-card:nth-child(1)::before { background: linear-gradient(90deg, var(--accent-red), #ff8a65); }
+        .stat-card:nth-child(2)::before { background: linear-gradient(90deg, var(--accent-yellow), #ffcc02); }
+        .stat-card:nth-child(3)::before { background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan)); }
+        .stat-card:nth-child(4)::before { background: linear-gradient(90deg, var(--accent-green), #aed581); }
+        .stat-card:nth-child(5)::before { background: linear-gradient(90deg, var(--accent-purple), #e040fb); }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 800;
+            font-family: 'Courier New', monospace;
+            line-height: 1;
+        }
+
+        .stat-card:nth-child(1) .stat-value { color: var(--accent-red); }
+        .stat-card:nth-child(2) .stat-value { color: var(--accent-yellow); }
+        .stat-card:nth-child(3) .stat-value { color: var(--accent-blue); }
+        .stat-card:nth-child(4) .stat-value { color: var(--accent-green); }
+        .stat-card:nth-child(5) .stat-value { color: var(--accent-purple); }
+
+        .stat-desc {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+        }
+
+        /* 通用面板卡片 */
+        .panel {
+            background: linear-gradient(145deg, var(--bg-card), var(--bg-secondary));
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            overflow: hidden;
+            transition: box-shadow 0.2s;
+        }
+
+        .panel:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+
+        .panel-header {
+            padding: 16px 22px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .panel-header .icon {
+            font-size: 18px;
+        }
+
+        .panel-body { padding: 20px 22px; }
+
+        /* 维度切换按钮 */
+        .dim-btns { display: flex; gap: 4px; }
+        .dim-btn {
+            padding: 4px 12px; border: 1px solid var(--border-color); border-radius: 6px;
+            background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .dim-btn.active {
+            background: rgba(79,195,247,0.15); color: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+        .dim-btn:hover:not(.active) { background: rgba(136,146,176,0.1); }
+
+        /* 双列网格 */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        /* 图表容器 */
+        .chart-container {
+            width: 100%;
+            height: 320px;
+        }
+
+        /* 表格 */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table th {
+            text-align: left;
+            padding: 10px 14px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+        }
+
+        .data-table td {
+            padding: 10px 14px;
+            font-size: 13px;
+            border-bottom: 1px solid rgba(42,48,101,0.5);
+        }
+
+        .data-table tr:last-child td { border-bottom: none; }
+        .data-table tbody tr:hover { background: rgba(79,195,247,0.05); }
+
+        /* 标签 */
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-danger { background: rgba(239,83,80,0.15); color: var(--accent-red); }
+        .badge-success { background: rgba(102,187,106,0.15); color: var(--accent-green); }
+        .badge-warning { background: rgba(255,167,38,0.15); color: var(--accent-yellow); }
+        .badge-info { background: rgba(79,195,247,0.15); color: var(--accent-blue); }
+
+        /* 状态项 */
+        .status-list { list-style: none; }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(42,48,101,0.4);
+        }
+
+        .status-item:last-child { border-bottom: none; }
+
+        .status-key {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .status-val {
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* 进度条 */
+        .progress-wrap {
+            margin: 14px 0;
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            margin-bottom: 6px;
+        }
+
+        .progress-label span:first-child { color: var(--text-secondary); }
+        .progress-label span:last-child { font-weight: 700; font-family: 'Courier New', monospace; }
+
+        .progress-bar {
+            height: 8px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.6s ease;
+        }
+
+        /* 三列网格 */
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        /* 底部全宽面板 */
+        .full-width { margin-bottom: 24px; }
+
+        /* IP排名条 */
+        .ip-bar-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .ip-bar-row:last-child { margin-bottom: 0; }
+
+        .ip-rank {
+            width: 24px;
+            height: 24px;
+            background: var(--border-color);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .ip-rank.top3 { background: linear-gradient(135deg, var(--accent-red), #ff8a65); }
+
+        .ip-addr {
+            width: 140px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            flex-shrink: 0;
+        }
+
+        .ip-bar-bg {
+            flex: 1;
+            height: 22px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .ip-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-red), var(--accent-yellow));
+            border-radius: 4px;
+            transition: width 0.8s ease;
+            min-width: 2px;
+        }
+
+        .ip-count {
+            width: 60px;
+            text-align: right;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--accent-yellow);
+            flex-shrink: 0;
+        }
+
+        .ip-geo { font-size: 11px; padding: 1px 8px; border-radius: 4px; background: rgba(79,195,247,0.1); color: var(--accent-cyan); margin-left: 6px; vertical-align: middle; }
+        .ip-geo.unknown { background: rgba(136,146,176,0.1); color: var(--text-secondary); }
+
+        .ssh-conn-badge {
+            display: inline-flex; align-items: center; justify-content: center;
+            min-width: 28px; height: 28px; padding: 0 10px;
+            border-radius: 14px; font-size: 14px; font-weight: 800;
+            background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan));
+            color: #fff; font-family: 'Courier New', monospace;
+        }
+        .ssh-session-row {
+            display: flex; align-items: center; gap: 16px;
+            padding: 10px 16px; border-bottom: 1px solid rgba(42,48,101,0.3);
+            font-size: 13px;
+        }
+        .ssh-session-row:last-child { border-bottom: none; }
+        .ssh-session-user { color: var(--accent-green); font-weight: 700; min-width: 80px; }
+        .ssh-session-ip { color: var(--accent-cyan); font-family: 'Courier New', monospace; min-width: 140px; }
+        .ssh-session-time { color: var(--text-secondary); font-size: 12px; }
+        .ssh-session-term { color: var(--text-secondary); font-size: 11px; background: rgba(136,146,176,0.1); padding: 2px 8px; border-radius: 4px; }
+
+        /* 加载动画 */
+        .loading-overlay {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 200px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .pulse {
+            animation: pulse-anim 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-anim {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+
+        /* 自适应布局 */
+        @media (max-width: 1200px) {
+            .stats-row { grid-template-columns: repeat(3, 1fr); }
+            .grid-3 { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 900px) {
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+            .grid-2 { grid-template-columns: 1fr; }
+            .main-content { padding: 16px; }
+            .header { padding: 12px 16px; }
+            .tab-bar { flex-wrap: wrap; width: 100%; }
+        }
+
+        @media (max-width: 600px) {
+            .stats-row { grid-template-columns: 1fr; }
+            .stat-value { font-size: 26px; }
+        }
+
+        /* 用户名TOP表格 */
+        .user-rank-table .rank-bar {
+            display: inline-block;
+            height: 6px;
+            background: linear-gradient(90deg, var(--accent-purple), var(--accent-blue));
+            border-radius: 3px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        /* 端口标记 */
+        .port-num {
+            font-family: 'Courier New', monospace;
+            font-weight: 700;
+            color: var(--accent-cyan);
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-primary);
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: linear-gradient(180deg, var(--accent-blue), var(--accent-cyan));
+            border-radius: 2px;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            border-top: 1px solid var(--border-color);
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部栏 -->
+    <div class="header">
+        <div class="header-left">
+            <div class="header-logo">&#128737;</div>
+            <div>
+                <div class="header-title">安全监控看板</div>
+                <div class="header-hostname" id="hostname">加载中...</div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="header-time" id="currentTime"></div>
+            <a href="/services" class="header-link">&#9881; 服务管理</a>
+            <button class="btn-refresh" onclick="refreshData()">
+                <span class="refresh-icon">&#x21bb;</span> 刷新
+            </button>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <!-- 标签页切换 -->
+        <div class="tab-bar">
+            <button class="tab-btn active" onclick="switchDashTab('overview')">综合概览</button>
+            <button class="tab-btn" onclick="switchDashTab('ssh')">SSH 暴力破解</button>
+            <button class="tab-btn" onclick="switchDashTab('firewall')">防火墙拦截</button>
+            <button class="tab-btn" onclick="switchDashTab('system')">系统状态</button>
+        </div>
+
+        <!-- 综合概览 -->
+        <div id="dtab-overview" class="dash-tab active">
+            <!-- 综合统计卡片 -->
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-label">SSH 攻击总数</div>
+                    <div class="stat-value" id="totalAttacks">-</div>
+                    <div class="stat-desc">暴力破解尝试</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">防火墙拦截</div>
+                    <div class="stat-value" id="totalBlocked">-</div>
+                    <div class="stat-desc">端口扫描/非法连接</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">今日威胁总数</div>
+                    <div class="stat-value" id="todayThreats">-</div>
+                    <div class="stat-desc">SSH攻击 + 防火墙拦截</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">攻击IP总数</div>
+                    <div class="stat-value" id="uniqueIPs">-</div>
+                    <div class="stat-desc">SSH + 网络扫描合计</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">系统运行</div>
+                    <div class="stat-value" id="uptime" style="font-size: 22px;">-</div>
+                    <div class="stat-desc">成功登录: <span id="successLogins">-</span> 次</div>
+                </div>
+            </div>
+
+            <!-- SSH 活跃连接 -->
+            <div class="panel" style="margin-bottom:24px;">
+                <div class="panel-header">
+                    <h3 class="panel-title">&#128279; SSH 活跃连接</h3>
+                    <span class="ssh-conn-badge" id="sshConnCount">-</span>
+                </div>
+                <div id="sshSessionsContainer">
+                    <div style="text-align:center;color:var(--text-secondary);padding:20px;">加载中...</div>
+                </div>
+            </div>
+
+            <!-- IP 攻击来源国家分布 -->
+            <div class="grid-2" style="margin-top:24px;">
+                <div class="panel">
+                    <div class="panel-header"><span class="icon">&#127758;</span> SSH 攻击来源国家分布</div>
+                    <div class="panel-body">
+                        <div class="chart-container" id="sshCountryChart"></div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><span class="icon">&#127758;</span> 防火墙拦截来源国家分布</div>
+                    <div class="panel-body">
+                        <div class="chart-container" id="fwCountryChart"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SSH 暴力破解 -->
+        <div id="dtab-ssh" class="dash-tab">
+            <div class="section-title">SSH 暴力破解态势</div>
+            <div class="grid-2">
+                <div class="panel">
+                    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+                        <span><span class="icon">&#128200;</span> SSH 攻击趋势</span>
+                        <span class="dim-btns" id="sshDimBtns">
+                            <button class="dim-btn active" onclick="switchSSHDim('day')">天</button>
+                            <button class="dim-btn" onclick="switchSSHDim('hour')">时</button>
+                            <button class="dim-btn" onclick="switchSSHDim('min')">分</button>
+                        </span>
+                    </div>
+                    <div class="panel-body">
+                        <div class="chart-container" id="dailyChart"></div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><span class="icon">&#128202;</span> SSH 24小时攻击分布</div>
+                    <div class="panel-body">
+                        <div class="chart-container" id="hourlyChart"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="panel">
+                    <div class="panel-header"><span class="icon">&#127919;</span> SSH 攻击来源 IP TOP 10</div>
+                    <div class="panel-body" id="topIPsContainer">
+                        <div class="loading-overlay"><span class="pulse">加载中...</span></div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><span class="icon">&#128100;</span> 被尝试用户名 TOP 10</div>
+                    <div class="panel-body">
+                        <table class="data-table user-rank-table" id="topUsersTable">
+                            <thead><tr><th>#</th><th>用户名</th><th>尝试次数</th><th>占比</th></tr></thead>
+                            <tbody><tr><td colspan="4" style="text-align:center;color:var(--text-secondary)">加载中...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 防火墙拦截 -->
+        <div id="dtab-firewall" class="dash-tab">
+            <div class="section-title">防火墙拦截态势（端口扫描 / 网络探测）</div>
+            <div class="grid-2">
+                <div class="panel">
+                    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+                        <span><span class="icon">&#128293;</span> 防火墙拦截趋势</span>
+                        <span class="dim-btns" id="fwDimBtns">
+                            <button class="dim-btn active" onclick="switchFWDim('day')">天</button>
+                            <button class="dim-btn" onclick="switchFWDim('hour')">时</button>
+                            <button class="dim-btn" onclick="switchFWDim('min')">分</button>
+                        </span>
+                    </div>
+                    <div class="panel-body">
+                        <div class="chart-container" id="fwDailyChart"></div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><span class="icon">&#128682;</span> 被扫描端口 TOP 15</div>
+                    <div class="panel-body">
+                        <div class="chart-container" id="fwPortChart"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="panel">
+                    <div class="panel-header"><span class="icon">&#128373;</span> 网络扫描来源 IP TOP 10</div>
+                    <div class="panel-body" id="fwTopIPsContainer">
+                        <div class="loading-overlay"><span class="pulse">加载中...</span></div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><span class="icon">&#128225;</span> 综合攻击对比（SSH vs 网络扫描）</div>
+                    <div class="panel-body">
+                        <div class="chart-container" id="combinedChart"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 系统状态 -->
+        <div id="dtab-system" class="dash-tab">
+            <div class="section-title">防护与系统状态</div>
+            <div class="grid-3">
+                <div class="panel">
+                    <div class="panel-header"><span class="icon">&#128272;</span> SSH 配置状态</div>
+                    <div class="panel-body">
+                        <ul class="status-list" id="sshConfig">
+                            <li class="status-item"><span class="status-key">加载中...</span></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><span class="icon">&#129521;</span> 防火墙状态</div>
+                    <div class="panel-body" id="firewallStatus">
+                        <div class="loading-overlay"><span class="pulse">加载中...</span></div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header"><span class="icon">&#128683;</span> Fail2Ban 状态</div>
+                    <div class="panel-body" id="fail2banStatus">
+                        <div class="loading-overlay"><span class="pulse">加载中...</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 系统资源 -->
+            <div class="panel full-width">
+                <div class="panel-header"><span class="icon">&#128187;</span> 系统资源</div>
+                <div class="panel-body" id="systemResources">
+                    <div class="loading-overlay"><span class="pulse">加载中...</span></div>
+                </div>
+            </div>
+
+            <!-- 端口监控 -->
+            <div class="section-title">服务端口监控</div>
+            <div class="panel full-width">
+                <div class="panel-header"><span class="icon">&#127760;</span> 监听端口列表</div>
+                <div class="panel-body">
+                    <table class="data-table" id="portsTable">
+                        <thead><tr><th>端口</th><th>绑定地址</th><th>进程</th><th>PID</th><th>状态</th><th>暴露</th></tr></thead>
+                        <tbody><tr><td colspan="6" style="text-align:center;color:var(--text-secondary)">加载中...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        安全监控看板 &copy; 2026 | 数据来源: auth.log + syslog (UFW) | 刷新时间: <span id="lastUpdate">-</span>
+    </div>
+
+<script>
+let dailyChartInstance = null;
+let hourlyChartInstance = null;
+let fwDailyChartInstance = null;
+let fwPortChartInstance = null;
+let combinedChartInstance = null;
+let sshCountryChartInst = null;
+let fwCountryChartInst = null;
+
+// 标签页切换
+function switchDashTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.dash-tab').forEach(c => c.classList.remove('active'));
+    const tabMap = {
+        'overview': '综合概览',
+        'ssh': 'SSH 暴力破解',
+        'firewall': '防火墙拦截',
+        'system': '系统状态'
+    };
+    document.querySelectorAll('.tab-btn').forEach(b => {
+        if (b.textContent.trim() === tabMap[tab]) b.classList.add('active');
+    });
+    document.getElementById('dtab-' + tab).classList.add('active');
+
+    // resize charts in the new tab
+    setTimeout(() => {
+        if (dailyChartInstance) dailyChartInstance.resize();
+        if (hourlyChartInstance) hourlyChartInstance.resize();
+        if (fwDailyChartInstance) fwDailyChartInstance.resize();
+        if (fwPortChartInstance) fwPortChartInstance.resize();
+        if (combinedChartInstance) combinedChartInstance.resize();
+        if (sshCountryChartInst) sshCountryChartInst.resize();
+        if (fwCountryChartInst) fwCountryChartInst.resize();
+    }, 50);
+}
+
+// 更新时钟
+function updateClock() {
+    const now = new Date();
+    document.getElementById('currentTime').textContent = now.toLocaleString('zh-CN', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// 数字格式化
+function formatNum(n) {
+    if (n === undefined || n === null) return '-';
+    return n.toLocaleString('zh-CN');
+}
+
+// HTML转义
+function escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+// 颜色辅助
+function getProgressColor(pct) {
+    if (pct >= 90) return 'var(--accent-red)';
+    if (pct >= 70) return 'var(--accent-yellow)';
+    return 'var(--accent-green)';
+}
+
+// 渲染每日趋势图
+function renderDailyChart(data) {
+    const el = document.getElementById('dailyChart');
+    if (!dailyChartInstance) dailyChartInstance = echarts.init(el, null, {renderer: 'canvas'});
+
+    const option = {
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(26,31,69,0.95)',
+            borderColor: '#2a3065',
+            textStyle: { color: '#e4e7f5', fontSize: 13 },
+            formatter: function(params) {
+                const p = params[0];
+                return `<strong>${p.axisValue}</strong><br/>攻击次数: <span style="color:#ef5350;font-weight:700">${formatNum(p.value)}</span>`;
+            }
+        },
+        grid: { left: 60, right: 20, top: 30, bottom: 35 },
+        xAxis: {
+            type: 'category',
+            data: data.dates,
+            axisLine: { lineStyle: { color: '#2a3065' }},
+            axisLabel: { color: '#8892b0', fontSize: 11 },
+        },
+        yAxis: {
+            type: 'value',
+            axisLine: { show: false },
+            splitLine: { lineStyle: { color: 'rgba(42,48,101,0.5)' }},
+            axisLabel: { color: '#8892b0', fontSize: 11 },
+        },
+        series: [{
+            type: 'line',
+            data: data.counts,
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: 8,
+            lineStyle: { color: '#ef5350', width: 3 },
+            itemStyle: { color: '#ef5350', borderColor: '#fff', borderWidth: 2 },
+            areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: 'rgba(239,83,80,0.35)' },
+                    { offset: 1, color: 'rgba(239,83,80,0.02)' }
+                ])
+            },
+        }]
+    };
+    dailyChartInstance.setOption(option);
+}
+
+// 渲染每小时分布图
+function renderHourlyChart(data) {
+    const el = document.getElementById('hourlyChart');
+    if (!hourlyChartInstance) hourlyChartInstance = echarts.init(el, null, {renderer: 'canvas'});
+
+    const option = {
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(26,31,69,0.95)',
+            borderColor: '#2a3065',
+            textStyle: { color: '#e4e7f5', fontSize: 13 },
+            formatter: function(params) {
+                const p = params[0];
+                return `<strong>${p.axisValue}:00</strong><br/>攻击次数: <span style="color:#4fc3f7;font-weight:700">${formatNum(p.value)}</span>`;
+            }
+        },
+        grid: { left: 60, right: 20, top: 30, bottom: 35 },
+        xAxis: {
+            type: 'category',
+            data: data.hours.map(h => String(h).padStart(2, '0')),
+            axisLine: { lineStyle: { color: '#2a3065' }},
+            axisLabel: { color: '#8892b0', fontSize: 11 },
+        },
+        yAxis: {
+            type: 'value',
+            axisLine: { show: false },
+            splitLine: { lineStyle: { color: 'rgba(42,48,101,0.5)' }},
+            axisLabel: { color: '#8892b0', fontSize: 11 },
+        },
+        series: [{
+            type: 'bar',
+            data: data.counts,
+            barWidth: '60%',
+            itemStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: '#4fc3f7' },
+                    { offset: 1, color: 'rgba(79,195,247,0.2)' }
+                ]),
+                borderRadius: [4, 4, 0, 0],
+            },
+        }]
+    };
+    hourlyChartInstance.setOption(option);
+}
+
+// 渲染IP TOP10
+function renderTopIPs(ips) {
+    const container = document.getElementById('topIPsContainer');
+    if (!ips || ips.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">暂无数据</div>';
+        return;
+    }
+    const maxCount = ips[0].count;
+    let html = '';
+    ips.forEach((item, idx) => {
+        const pct = (item.count / maxCount * 100).toFixed(1);
+        const geo = item.country && item.country !== '未知'
+            ? '<span class="ip-geo">' + escHtml(item.country) + (item.city ? ' ' + escHtml(item.city) : '') + '</span>'
+            : '<span class="ip-geo unknown">未知</span>';
+        html += `
+        <div class="ip-bar-row">
+            <div class="ip-rank ${idx < 3 ? 'top3' : ''}">${idx + 1}</div>
+            <div class="ip-addr">${item.ip} ${geo}</div>
+            <div class="ip-bar-bg"><div class="ip-bar-fill" style="width: ${pct}%"></div></div>
+            <div class="ip-count">${formatNum(item.count)}</div>
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+// 渲染用户名TOP10
+function renderTopUsers(users, total) {
+    const tbody = document.querySelector('#topUsersTable tbody');
+    if (!users || users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>';
+        return;
+    }
+    const maxC = users[0].count;
+    let html = '';
+    users.forEach((u, i) => {
+        const pct = total > 0 ? (u.count / total * 100).toFixed(1) : 0;
+        const barW = (u.count / maxC * 80).toFixed(0);
+        html += `<tr>
+            <td style="color:${i < 3 ? 'var(--accent-red)' : 'var(--text-secondary)'};font-weight:700">${i + 1}</td>
+            <td><code style="color:var(--accent-cyan)">${u.user}</code></td>
+            <td style="font-family:'Courier New',monospace;font-weight:700">${formatNum(u.count)}</td>
+            <td>${pct}% <span class="rank-bar" style="width:${barW}px"></span></td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
+
+// ============ 防火墙拦截图表 ============
+
+// 防火墙每日拦截趋势
+function renderFWDailyChart(data) {
+    const el = document.getElementById('fwDailyChart');
+    if (!fwDailyChartInstance) fwDailyChartInstance = echarts.init(el, null, {renderer: 'canvas'});
+
+    const option = {
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(26,31,69,0.95)',
+            borderColor: '#2a3065',
+            textStyle: { color: '#e4e7f5', fontSize: 13 },
+            formatter: function(params) {
+                const p = params[0];
+                return `<strong>${p.axisValue}</strong><br/>拦截次数: <span style="color:#ffa726;font-weight:700">${formatNum(p.value)}</span>`;
+            }
+        },
+        grid: { left: 60, right: 20, top: 30, bottom: 35 },
+        xAxis: {
+            type: 'category',
+            data: data.dates,
+            axisLine: { lineStyle: { color: '#2a3065' }},
+            axisLabel: { color: '#8892b0', fontSize: 11 },
+        },
+        yAxis: {
+            type: 'value',
+            axisLine: { show: false },
+            splitLine: { lineStyle: { color: 'rgba(42,48,101,0.5)' }},
+            axisLabel: { color: '#8892b0', fontSize: 11 },
+        },
+        series: [{
+            type: 'line',
+            data: data.counts,
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: 8,
+            lineStyle: { color: '#ffa726', width: 3 },
+            itemStyle: { color: '#ffa726', borderColor: '#fff', borderWidth: 2 },
+            areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: 'rgba(255,167,38,0.35)' },
+                    { offset: 1, color: 'rgba(255,167,38,0.02)' }
+                ])
+            },
+        }]
+    };
+    fwDailyChartInstance.setOption(option);
+}
+
+// 被扫描端口TOP15（水平柱状图）
+function renderFWPortChart(ports) {
+    const el = document.getElementById('fwPortChart');
+    if (!fwPortChartInstance) fwPortChartInstance = echarts.init(el, null, {renderer: 'canvas'});
+
+    if (!ports || ports.length === 0) {
+        fwPortChartInstance.setOption({ title: { text: '暂无数据', left: 'center', top: 'middle', textStyle: { color: '#8892b0' }}});
+        return;
+    }
+
+    const reversed = [...ports].reverse();
+    const option = {
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(26,31,69,0.95)',
+            borderColor: '#2a3065',
+            textStyle: { color: '#e4e7f5', fontSize: 13 },
+            formatter: function(params) {
+                const p = params[0];
+                const item = reversed[p.dataIndex];
+                return `<strong>端口 ${item.port}</strong> (${item.label})<br/>被扫描: <span style="color:#ffa726;font-weight:700">${formatNum(p.value)}</span> 次`;
+            }
+        },
+        grid: { left: 100, right: 50, top: 10, bottom: 20 },
+        xAxis: {
+            type: 'value',
+            axisLine: { show: false },
+            splitLine: { lineStyle: { color: 'rgba(42,48,101,0.5)' }},
+            axisLabel: { color: '#8892b0', fontSize: 11 },
+        },
+        yAxis: {
+            type: 'category',
+            data: reversed.map(p => p.port + ' (' + p.label + ')'),
+            axisLine: { lineStyle: { color: '#2a3065' }},
+            axisLabel: { color: '#8892b0', fontSize: 11 },
+        },
+        series: [{
+            type: 'bar',
+            data: reversed.map(p => p.count),
+            barWidth: '55%',
+            itemStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                    { offset: 0, color: 'rgba(255,167,38,0.3)' },
+                    { offset: 1, color: '#ffa726' }
+                ]),
+                borderRadius: [0, 4, 4, 0],
+            },
+            label: {
+                show: true,
+                position: 'right',
+                color: '#ffa726',
+                fontSize: 11,
+                fontWeight: 700,
+            }
+        }]
+    };
+    fwPortChartInstance.setOption(option);
+}
+
+// 防火墙扫描来源IP TOP10
+function renderFWTopIPs(ips) {
+    const container = document.getElementById('fwTopIPsContainer');
+    if (!ips || ips.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">暂无数据</div>';
+        return;
+    }
+    const maxCount = ips[0].count;
+    let html = '';
+    ips.forEach((item, idx) => {
+        const pct = (item.count / maxCount * 100).toFixed(1);
+        const geo = item.country && item.country !== '未知'
+            ? '<span class="ip-geo">' + escHtml(item.country) + (item.city ? ' ' + escHtml(item.city) : '') + '</span>'
+            : '<span class="ip-geo unknown">未知</span>';
+        html += `
+        <div class="ip-bar-row">
+            <div class="ip-rank ${idx < 3 ? 'top3' : ''}">${idx + 1}</div>
+            <div class="ip-addr">${item.ip} ${geo}</div>
+            <div class="ip-bar-bg"><div class="ip-bar-fill" style="width: ${pct}%; background: linear-gradient(90deg, var(--accent-yellow), var(--accent-red));"></div></div>
+            <div class="ip-count">${formatNum(item.count)}</div>
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+// 综合对比图（SSH攻击 vs 防火墙拦截）
+function renderCombinedChart(sshDaily, fwDaily) {
+    const el = document.getElementById('combinedChart');
+    if (!combinedChartInstance) combinedChartInstance = echarts.init(el, null, {renderer: 'canvas'});
+
+    // 合并日期
+    const allDates = new Set([...sshDaily.dates, ...fwDaily.dates]);
+    const sortedDates = [...allDates].sort();
+    const sshMap = {};
+    const fwMap = {};
+    sshDaily.dates.forEach((d, i) => sshMap[d] = sshDaily.counts[i]);
+    fwDaily.dates.forEach((d, i) => fwMap[d] = fwDaily.counts[i]);
+
+    const option = {
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(26,31,69,0.95)',
+            borderColor: '#2a3065',
+            textStyle: { color: '#e4e7f5', fontSize: 13 },
+        },
+        legend: {
+            data: ['SSH暴力破解', '防火墙拦截'],
+            textStyle: { color: '#8892b0', fontSize: 12 },
+            top: 0,
+        },
+        grid: { left: 60, right: 20, top: 40, bottom: 35 },
+        xAxis: {
+            type: 'category',
+            data: sortedDates,
+            axisLine: { lineStyle: { color: '#2a3065' }},
+            axisLabel: { color: '#8892b0', fontSize: 11 },
+        },
+        yAxis: {
+            type: 'value',
+            axisLine: { show: false },
+            splitLine: { lineStyle: { color: 'rgba(42,48,101,0.5)' }},
+            axisLabel: { color: '#8892b0', fontSize: 11 },
+        },
+        series: [
+            {
+                name: 'SSH暴力破解',
+                type: 'bar',
+                data: sortedDates.map(d => sshMap[d] || 0),
+                itemStyle: { color: '#ef5350', borderRadius: [4, 4, 0, 0] },
+                barGap: '10%',
+            },
+            {
+                name: '防火墙拦截',
+                type: 'bar',
+                data: sortedDates.map(d => fwMap[d] || 0),
+                itemStyle: { color: '#ffa726', borderRadius: [4, 4, 0, 0] },
+            }
+        ]
+    };
+    combinedChartInstance.setOption(option);
+}
+
+// ============ 国家分布饼图 ============
+
+function renderCountryChart(elId, data, instRef) {
+    const el = document.getElementById(elId);
+    let inst = instRef === 'ssh' ? sshCountryChartInst : fwCountryChartInst;
+    if (!inst) {
+        inst = echarts.init(el, null, {renderer: 'canvas'});
+        if (instRef === 'ssh') sshCountryChartInst = inst;
+        else fwCountryChartInst = inst;
+    }
+    if (!data || data.length === 0) {
+        inst.setOption({ title: { text: '暂无数据', left: 'center', top: 'middle', textStyle: { color: '#8892b0' }}});
+        return;
+    }
+    const option = {
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'item',
+            backgroundColor: 'rgba(26,31,69,0.95)',
+            borderColor: '#2a3065',
+            textStyle: { color: '#e4e7f5', fontSize: 13 },
+            formatter: function(p) {
+                return '<strong>' + p.name + '</strong><br/>攻击次数: <span style="font-weight:700">' + p.value.toLocaleString('zh-CN') + '</span> (' + p.percent + '%)';
+            }
+        },
+        legend: {
+            type: 'scroll',
+            orient: 'vertical',
+            right: 10,
+            top: 20,
+            bottom: 20,
+            textStyle: { color: '#8892b0', fontSize: 12 },
+        },
+        series: [{
+            type: 'pie',
+            radius: ['40%', '70%'],
+            center: ['35%', '50%'],
+            avoidLabelOverlap: true,
+            itemStyle: { borderRadius: 6, borderColor: '#0a0e27', borderWidth: 2 },
+            label: { show: false },
+            emphasis: {
+                label: { show: true, fontSize: 14, fontWeight: 'bold', color: '#e4e7f5' }
+            },
+            data: data.map(d => ({ name: d.country, value: d.count }))
+        }]
+    };
+    inst.setOption(option);
+}
+
+// SSH配置
+function renderSSHConfig(cfg) {
+    const el = document.getElementById('sshConfig');
+    const items = [
+        { key: '密码认证', val: cfg.password_auth, good: 'no' },
+        { key: '公钥认证', val: cfg.pubkey_auth, good: 'yes' },
+        { key: 'Root登录', val: cfg.root_login, good: 'no' },
+        { key: '端口', val: cfg.port, good: null },
+        { key: '最大尝试次数', val: cfg.max_auth_tries, good: null },
+    ];
+    let html = '';
+    items.forEach(item => {
+        let badge = '';
+        if (item.good !== null && item.val !== 'unknown') {
+            if (item.val === item.good) {
+                badge = `<span class="badge badge-success">安全</span>`;
+            } else {
+                badge = `<span class="badge badge-danger">风险</span>`;
+            }
+        } else {
+            badge = `<span class="badge badge-info">${item.val}</span>`;
+        }
+        html += `<li class="status-item">
+            <span class="status-key">${item.key}</span>
+            <span class="status-val">${item.val} ${badge}</span>
+        </li>`;
+    });
+    el.innerHTML = html;
+}
+
+// 防火墙
+function renderFirewall(fw) {
+    const el = document.getElementById('firewallStatus');
+    let html = `<ul class="status-list">
+        <li class="status-item">
+            <span class="status-key">类型</span>
+            <span class="status-val"><span class="badge badge-info">${fw.type}</span></span>
+        </li>
+        <li class="status-item">
+            <span class="status-key">状态</span>
+            <span class="status-val">${fw.active
+                ? '<span class="badge badge-success">运行中</span>'
+                : '<span class="badge badge-danger">未启用</span>'}</span>
+        </li>
+        <li class="status-item">
+            <span class="status-key">规则数</span>
+            <span class="status-val" style="color:var(--accent-cyan)">${fw.rules.length}</span>
+        </li>
+    </ul>`;
+    el.innerHTML = html;
+}
+
+// Fail2Ban
+function renderFail2Ban(f2b) {
+    const el = document.getElementById('fail2banStatus');
+    let html = `<ul class="status-list">
+        <li class="status-item">
+            <span class="status-key">运行状态</span>
+            <span class="status-val">${f2b.running
+                ? '<span class="badge badge-success">运行中</span>'
+                : '<span class="badge badge-warning">未运行</span>'}</span>
+        </li>
+        <li class="status-item">
+            <span class="status-key">监控规则</span>
+            <span class="status-val" style="color:var(--accent-cyan)">${f2b.jails.length} 个 Jail</span>
+        </li>
+        <li class="status-item">
+            <span class="status-key">当前封禁IP</span>
+            <span class="status-val" style="color:var(--accent-red);font-weight:800">${f2b.banned_ips}</span>
+        </li>`;
+    if (f2b.jails.length > 0) {
+        html += `<li class="status-item">
+            <span class="status-key">Jail列表</span>
+            <span class="status-val">${f2b.jails.map(j => `<span class="badge badge-info" style="margin-left:4px">${j}</span>`).join(' ')}</span>
+        </li>`;
+    }
+    html += '</ul>';
+    el.innerHTML = html;
+}
+
+// 系统资源
+function renderSystemResources(sys) {
+    const el = document.getElementById('systemResources');
+    const items = [
+        { label: 'CPU 使用率', pct: sys.cpu_percent, detail: '' },
+        { label: '内存使用', pct: sys.memory.percent, detail: `${sys.memory.used}G / ${sys.memory.total}G` },
+        { label: '磁盘使用', pct: sys.disk.percent, detail: `${sys.disk.used}G / ${sys.disk.total}G` },
+    ];
+    let html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;">';
+    items.forEach(item => {
+        const color = getProgressColor(item.pct);
+        html += `<div class="progress-wrap">
+            <div class="progress-label">
+                <span>${item.label}</span>
+                <span style="color:${color}">${item.pct.toFixed(1)}%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width:${item.pct}%;background:${color}"></div>
+            </div>
+            ${item.detail ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">${item.detail}</div>` : ''}
+        </div>`;
+    });
+    html += '</div>';
+    el.innerHTML = html;
+}
+
+// 端口列表
+function renderPorts(ports) {
+    const tbody = document.querySelector('#portsTable tbody');
+    if (!ports || ports.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-secondary)">暂无数据</td></tr>';
+        return;
+    }
+    // 按端口号排序
+    ports.sort((a, b) => parseInt(a.port) - parseInt(b.port));
+    let html = '';
+    ports.forEach(p => {
+        const exposedBadge = p.exposed
+            ? '<span class="badge badge-danger">外部可访问</span>'
+            : '<span class="badge badge-success">仅本地</span>';
+        html += `<tr>
+            <td><span class="port-num">${p.port}</span></td>
+            <td style="font-family:'Courier New',monospace;font-size:12px">${p.address}</td>
+            <td>${p.process || '<span style="color:var(--text-secondary)">-</span>'}</td>
+            <td style="font-family:'Courier New',monospace">${p.pid || '-'}</td>
+            <td><span class="badge badge-success">${p.state}</span></td>
+            <td>${exposedBadge}</td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
+
+// SSH 活跃连接
+function renderSSHSessions(sessions) {
+    const container = document.getElementById('sshSessionsContainer');
+    const list = sessions.sessions || [];
+    if (list.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;font-size:13px;">当前无活跃 SSH 连接</div>';
+        return;
+    }
+    let html = '';
+    list.forEach(s => {
+        html += '<div class="ssh-session-row">' +
+            '<span class="ssh-session-user">' + escHtml(s.user) + '</span>' +
+            '<span class="ssh-session-ip">' + escHtml(s.ip || '-') + '</span>' +
+            '<span class="ssh-session-term">' + escHtml(s.terminal) + '</span>' +
+            '<span class="ssh-session-time">' + escHtml(s.login_time) + '</span>' +
+            '</div>';
+    });
+    container.innerHTML = html;
+}
+
+// 主数据加载函数
+function refreshData() {
+    const btn = document.querySelector('.btn-refresh');
+    btn.classList.add('loading');
+
+    fetch('/api/data')
+        .then(r => r.json())
+        .then(data => {
+            const as = data.attack_stats;
+            const fb = data.firewall_blocks || {};
+
+            // 综合统计卡片
+            document.getElementById('totalAttacks').textContent = formatNum(as.total_attacks);
+            document.getElementById('totalBlocked').textContent = formatNum(fb.total_blocked || 0);
+            const todayTotal = (as.today_attacks || 0) + (fb.today_blocked || 0);
+            document.getElementById('todayThreats').textContent = formatNum(todayTotal);
+            const totalIPs = (as.unique_ips || 0) + (fb.unique_ips || 0);
+            document.getElementById('uniqueIPs').textContent = formatNum(totalIPs);
+            document.getElementById('successLogins').textContent = formatNum(as.successful_logins);
+            document.getElementById('uptime').textContent = data.system.uptime;
+            document.getElementById('hostname').textContent = data.system.hostname;
+
+            // 缓存数据供维度切换使用
+            window._sshData = as;
+            window._fwData = fb;
+
+            // SSH 图表（默认天维度）
+            renderDailyChart(as.daily_trend);
+            renderHourlyChart(as.hourly_distribution);
+            renderTopIPs(as.top_ips);
+            renderTopUsers(as.top_users, as.total_attacks);
+
+            // 防火墙拦截图表（默认天维度）
+            if (fb.daily_trend) renderFWDailyChart(fb.daily_trend);
+            if (fb.top_ports) renderFWPortChart(fb.top_ports);
+            if (fb.top_ips) renderFWTopIPs(fb.top_ips);
+            if (fb.daily_trend && as.daily_trend) renderCombinedChart(as.daily_trend, fb.daily_trend);
+
+            // 国家分布图
+            if (as.top_countries) renderCountryChart('sshCountryChart', as.top_countries, 'ssh');
+            if (fb.top_countries) renderCountryChart('fwCountryChart', fb.top_countries, 'fw');
+
+            // 防护状态
+            renderSSHConfig(data.ssh_config);
+            renderFirewall(data.firewall);
+            renderFail2Ban(data.fail2ban);
+            renderSystemResources(data.system);
+            renderPorts(data.ports);
+
+            // SSH 活跃连接
+            if (data.ssh_sessions) {
+                document.getElementById('sshConnCount').textContent = data.ssh_sessions.active_count || 0;
+                renderSSHSessions(data.ssh_sessions);
+            }
+
+            // 更新时间
+            document.getElementById('lastUpdate').textContent = data.timestamp;
+        })
+        .catch(err => {
+            console.error('数据加载失败:', err);
+        })
+        .finally(() => {
+            btn.classList.remove('loading');
+        });
+}
+
+// 窗口自适应
+window.addEventListener('resize', () => {
+    if (dailyChartInstance) dailyChartInstance.resize();
+    if (hourlyChartInstance) hourlyChartInstance.resize();
+    if (fwDailyChartInstance) fwDailyChartInstance.resize();
+    if (fwPortChartInstance) fwPortChartInstance.resize();
+    if (combinedChartInstance) combinedChartInstance.resize();
+    if (sshCountryChartInst) sshCountryChartInst.resize();
+    if (fwCountryChartInst) fwCountryChartInst.resize();
+});
+
+// ============ 维度切换 ============
+
+function setActiveDimBtn(containerId, dim) {
+    const btns = document.getElementById(containerId).querySelectorAll('.dim-btn');
+    btns.forEach(b => b.classList.remove('active'));
+    const map = {day: 0, hour: 1, min: 2};
+    btns[map[dim]].classList.add('active');
+}
+
+function switchSSHDim(dim) {
+    setActiveDimBtn('sshDimBtns', dim);
+    const d = window._sshData;
+    if (!d) return;
+    if (dim === 'day') renderDailyChart(d.daily_trend);
+    else if (dim === 'hour') renderDailyChart(d.hourly_trend || {dates:[], counts:[]});
+    else if (dim === 'min') renderDailyChart(d.minute_trend || {dates:[], counts:[]});
+}
+
+function switchFWDim(dim) {
+    setActiveDimBtn('fwDimBtns', dim);
+    const d = window._fwData;
+    if (!d) return;
+    if (dim === 'day') renderFWDailyChart(d.daily_trend);
+    else if (dim === 'hour') renderFWDailyChart(d.hourly_trend || {dates:[], counts:[]});
+    else if (dim === 'min') renderFWDailyChart(d.minute_trend || {dates:[], counts:[]});
+}
+
+// 初始加载
+refreshData();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""SecGate - 安全网关一体化管理工具
+
+用法:
+    secgate start          启动所有服务（网关 + 看板 + AI 助手）
+    secgate stop           停止所有服务
+    secgate restart        重启所有服务
+    secgate status         查看运行状态
+    secgate creds          查看登录凭证
+    secgate setup          首次部署（安装依赖 + 配置 Nginx/iptables/UFW + systemd）
+    secgate version        查看版本号
+    secgate update         更新到最新版本
+"""
+
+import os
+import sys
+import json
+import signal
+import subprocess
+import time
+
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PID_FILE = os.path.join(PROJECT_DIR, ".pids.json")
+sys.path.insert(0, PROJECT_DIR)
+
+
+def load_pids():
+    if os.path.exists(PID_FILE):
+        with open(PID_FILE) as f:
+            return json.load(f)
+    return {}
+
+
+def save_pids(pids):
+    with open(PID_FILE, "w") as f:
+        json.dump(pids, f)
+
+
+def is_running(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, TypeError):
+        return False
+
+
+def get_public_ip():
+    from shared import detect_public_ip
+    return detect_public_ip()
+
+
+def get_credentials():
+    from shared import CREDENTIALS_FILE
+    if os.path.exists(CREDENTIALS_FILE):
+        with open(CREDENTIALS_FILE) as f:
+            return json.load(f)
+    return {}
+
+
+def mask_secret(s):
+    """掩码敏感信息：Se******6!"""
+    if not s or len(s) < 5:
+        return "******"
+    return s[:2] + "******" + s[-2:]
+
+
+# ============ 命令实现 ============
+
+def cmd_start():
+    """启动所有服务"""
+    pids = load_pids()
+
+    # 检查是否已在运行
+    for name in ["gateway", "dashboard", "agent"]:
+        if name in pids and is_running(pids[name]):
+            print(f"  [跳过] {name} 已在运行 (PID: {pids[name]})")
+
+    # Flask 服务列表 (name, script, log, port)
+    flask_services = [
+        ("gateway", os.path.join(PROJECT_DIR, "gateway", "app.py"), "/tmp/secgate-gateway.log", 5002),
+        ("dashboard", os.path.join(PROJECT_DIR, "dashboard", "app.py"), "/tmp/secgate-dashboard.log", 5000),
+    ]
+
+    for name, script, log, port in flask_services:
+        if name in pids and is_running(pids[name]):
+            continue
+        # 清理端口上残留的旧进程
+        r = subprocess.run(["lsof", "-ti", f":{port}"], capture_output=True, text=True)
+        if r.stdout.strip():
+            for old_pid in r.stdout.strip().split("\n"):
+                try:
+                    os.kill(int(old_pid), signal.SIGKILL)
+                except Exception:
+                    pass
+            time.sleep(1)
+        proc = subprocess.Popen(
+            ["python3", script],
+            stdout=open(log, "a"),
+            stderr=subprocess.STDOUT,
+            cwd=os.path.dirname(script),
+            start_new_session=True,
+        )
+        pids[name] = proc.pid
+        print(f"  [启动] {name} (PID: {proc.pid}, 日志: {log})")
+
+    # 启动 Chainlit AI 助手
+    if "agent" not in pids or not is_running(pids.get("agent")):
+        agent_port = 8502
+        agent_dir = os.path.join(PROJECT_DIR, "agent")
+        agent_log = "/tmp/secgate-agent.log"
+        # 清理残留进程
+        r = subprocess.run(["lsof", "-ti", f":{agent_port}"], capture_output=True, text=True)
+        if r.stdout.strip():
+            for old_pid in r.stdout.strip().split("\n"):
+                try:
+                    os.kill(int(old_pid), signal.SIGKILL)
+                except Exception:
+                    pass
+            time.sleep(1)
+        env = os.environ.copy()
+        env["DISABLE_CLAUDE_TELEMETRY"] = "1"
+        env.pop("CLAUDECODE", None)
+        # Chainlit 密码认证需要 JWT secret
+        from shared import get_or_create_credential
+        import secrets as _sec
+        env["CHAINLIT_AUTH_SECRET"] = get_or_create_credential(
+            "chainlit_auth_secret", lambda: _sec.token_hex(32)
+        )
+        proc = subprocess.Popen(
+            ["chainlit", "run", "app.py", "--host", "0.0.0.0", "--port", str(agent_port)],
+            stdout=open(agent_log, "a"),
+            stderr=subprocess.STDOUT,
+            cwd=agent_dir,
+            start_new_session=True,
+            env=env,
+        )
+        pids["agent"] = proc.pid
+        print(f"  [启动] agent (PID: {proc.pid}, 端口: {agent_port}, 日志: {agent_log})")
+
+    save_pids(pids)
+    time.sleep(2)
+
+    # 显示信息
+    ip = get_public_ip()
+    creds = get_credentials()
+    print()
+    print("=" * 50)
+    print("  SecGate 安全网关已启动")
+    print("=" * 50)
+    print(f"  看板地址:  http://{ip}:5000")
+    print(f"  AI 助手:   http://{ip}:8502")
+    print(f"  用户名:    admin")
+    print(f"  密码:      {mask_secret(creds.get('dashboard_password', ''))}")
+    print()
+    print(f"  凭证文件:  {os.path.join(PROJECT_DIR, '.credentials.json')}")
+    print("=" * 50)
+
+
+def cmd_stop():
+    """停止所有服务"""
+    pids = load_pids()
+    for name in ["agent", "dashboard", "gateway"]:
+        pid = pids.get(name)
+        if pid and is_running(pid):
+            os.kill(pid, signal.SIGTERM)
+            print(f"  [停止] {name} (PID: {pid})")
+        else:
+            print(f"  [跳过] {name} 未运行")
+    save_pids({})
+
+
+def cmd_restart():
+    """重启所有服务"""
+    print("[停止服务]")
+    cmd_stop()
+    time.sleep(2)
+    print("\n[启动服务]")
+    cmd_start()
+
+
+def cmd_status():
+    """查看运行状态"""
+    pids = load_pids()
+    print()
+    for name in ["gateway", "dashboard", "agent"]:
+        pid = pids.get(name)
+        if pid and is_running(pid):
+            print(f"  {name:12s}  运行中  PID={pid}")
+        else:
+            print(f"  {name:12s}  未运行")
+
+    # 检查 Nginx
+    r = subprocess.run(["pgrep", "nginx"], capture_output=True)
+    nginx_ok = r.returncode == 0
+    print(f"  {'nginx':12s}  {'运行中' if nginx_ok else '未运行'}")
+    print()
+
+
+def cmd_creds():
+    """查看登录凭证"""
+    creds = get_credentials()
+    ip = get_public_ip()
+    print()
+    print("=" * 50)
+    print("  SecGate 登录凭证")
+    print("=" * 50)
+    print(f"  看板地址:      http://{ip}:5000")
+    print(f"  用户名:        admin")
+    print(f"  密码:          {mask_secret(creds.get('dashboard_password', ''))}")
+    print(f"  网关密钥:      {creds.get('gateway_secret', '未生成')[:16]}...")
+    print()
+    gw_config = os.path.join(PROJECT_DIR, "gateway", "config.json")
+    if os.path.exists(gw_config):
+        with open(gw_config) as f:
+            cfg = json.load(f)
+        tokens = cfg.get("tokens", {})
+        if tokens:
+            print("  网关 Token:")
+            for t, info in tokens.items():
+                print(f"    {info.get('name', 'unnamed'):10s}  {t[:8]}...{t[-4:]}")
+    print()
+    print(f"  凭证文件:  {os.path.join(PROJECT_DIR, '.credentials.json')}")
+    print("=" * 50)
+
+
+def cmd_version():
+    """查看版本号"""
+    version_file = os.path.join(PROJECT_DIR, "VERSION")
+    if os.path.exists(version_file):
+        with open(version_file) as f:
+            version = f.read().strip()
+    else:
+        version = "未知"
+    print(f"SecGate v{version}")
+
+
+def cmd_update():
+    """更新到最新版本"""
+    print("[更新] 停止服务...")
+    cmd_stop()
+
+    # 如果是 git 仓库，执行 git pull
+    if os.path.exists(os.path.join(PROJECT_DIR, ".git")):
+        print("[更新] 拉取最新代码...")
+        subprocess.run(["git", "pull"], cwd=PROJECT_DIR, check=True)
+
+    # 更新依赖
+    req_file = os.path.join(PROJECT_DIR, "requirements.txt")
+    if os.path.exists(req_file):
+        print("[更新] 更新 Python 依赖...")
+        subprocess.run(["pip3", "install", "-q", "-r", req_file])
+
+    print("[更新] 启动服务...")
+    cmd_start()
+    print("[更新] 完成!")
+
+
+def cmd_setup():
+    """首次部署：安装依赖 + 配置系统"""
+    print("=" * 50)
+    print("  SecGate 一键部署")
+    print("=" * 50)
+
+    # 1. 检测系统
+    ip = get_public_ip()
+    print(f"\n[1/6] 检测服务器 IP: {ip}")
+
+    # 2. 安装系统依赖
+    print("\n[2/6] 安装系统依赖...")
+    subprocess.run(["apt-get", "update", "-qq"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    pkgs = ["nginx", "iptables", "ufw", "fail2ban", "iproute2", "curl"]
+    for pkg in pkgs:
+        r = subprocess.run(["dpkg", "-s", pkg], capture_output=True)
+        if r.returncode != 0:
+            print(f"  安装 {pkg}...")
+            subprocess.run(
+                ["apt-get", "install", "-y", "-qq", pkg],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        else:
+            print(f"  {pkg} 已安装")
+
+    # 3. 安装 Python 依赖
+    print("\n[3/6] 安装 Python 依赖...")
+    subprocess.run(
+        ["pip3", "install", "-q", "-r", os.path.join(PROJECT_DIR, "requirements.txt")],
+        stdout=subprocess.DEVNULL,
+    )
+    print("  Python 依赖安装完成")
+
+    # 4. 生成凭证
+    print("\n[4/6] 生成凭证...")
+    # 触发凭证自动生成（通过 import）
+    from shared import get_or_create_credential
+    import secrets as _secrets
+    gw_secret = get_or_create_credential("gateway_secret", lambda: _secrets.token_hex(32))
+    db_pass = get_or_create_credential("dashboard_password", lambda: _secrets.token_urlsafe(12))
+    print(f"  Dashboard 密码: {mask_secret(db_pass)}")
+    print(f"  凭证文件: {os.path.join(PROJECT_DIR, '.credentials.json')}")
+
+    # 5. 配置 Nginx + iptables
+    print("\n[5/6] 配置 Nginx 网关...")
+    subprocess.run(["python3", os.path.join(PROJECT_DIR, "gateway", "generate-nginx.py")])
+
+    # 确保 sites-enabled 软链接存在
+    src = "/etc/nginx/sites-available/gateway.conf"
+    dst = "/etc/nginx/sites-enabled/gateway.conf"
+    if os.path.exists(src) and not os.path.exists(dst):
+        os.symlink(src, dst)
+    subprocess.run(["nginx", "-t"], capture_output=True)
+    subprocess.run(["nginx", "-s", "reload"], capture_output=True, stderr=subprocess.DEVNULL)
+
+    print("\n[6/6] 配置 iptables...")
+    subprocess.run(["bash", os.path.join(PROJECT_DIR, "gateway", "setup-iptables.sh")])
+
+    # 6. 配置 UFW 防火墙（自动放行受保护端口及其 Nginx 代理端口）
+    print("\n[+] 配置 UFW 防火墙...")
+    ufw_ports = {"22": "SSH", "5000": "Dashboard"}
+    gw_config = os.path.join(PROJECT_DIR, "gateway", "config.json")
+    if os.path.exists(gw_config):
+        with open(gw_config) as f:
+            cfg = json.load(f)
+        for port_str, info in cfg.get("protected_ports", {}).items():
+            comment = info.get("comment", f"端口 {port_str}")
+            ufw_ports[port_str] = comment
+            nginx_port = str(info.get("nginx_port", int(port_str) + 20000))
+            ufw_ports[nginx_port] = f"Nginx Auth Proxy :{port_str}"
+    for port, comment in sorted(ufw_ports.items(), key=lambda x: int(x[0])):
+        subprocess.run(
+            ["ufw", "allow", port + "/tcp", "comment", comment],
+            capture_output=True,
+        )
+    subprocess.run(["ufw", "--force", "enable"], capture_output=True)
+    allowed = ", ".join(sorted(ufw_ports.keys(), key=int))
+    print(f"  UFW 已启用，放行端口: {allowed}")
+
+    # 安装 gunicorn
+    print("\n[+] 安装 Gunicorn...")
+    subprocess.run(["pip3", "install", "-q", "gunicorn"], stdout=subprocess.DEVNULL)
+
+    # 生成 systemd service
+    print("\n[+] 配置 systemd 服务...")
+    service_content = f"""[Unit]
+Description=SecGate Security Gateway
+After=network.target
+
+[Service]
+Type=forking
+ExecStart={sys.executable} {os.path.join(PROJECT_DIR, 'secgate')} start
+ExecStop={sys.executable} {os.path.join(PROJECT_DIR, 'secgate')} stop
+ExecReload={sys.executable} {os.path.join(PROJECT_DIR, 'secgate')} restart
+RemainAfterExit=yes
+WorkingDirectory={PROJECT_DIR}
+
+[Install]
+WantedBy=multi-user.target
+"""
+    service_path = "/etc/systemd/system/secgate.service"
+    with open(service_path, "w") as f:
+        f.write(service_content)
+    subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
+    subprocess.run(["systemctl", "enable", "secgate"], capture_output=True)
+    print(f"  systemd 服务已配置: {service_path}")
+
+    # 启动服务
+    print("\n[+] 启动服务...")
+    cmd_start()
+
+    print("\n部署完成！")
+
+
+COMMANDS = {
+    "start": cmd_start,
+    "stop": cmd_stop,
+    "restart": cmd_restart,
+    "status": cmd_status,
+    "creds": cmd_creds,
+    "setup": cmd_setup,
+    "version": cmd_version,
+    "update": cmd_update,
+}
+
+HELP = """
+SecGate - 安全网关一体化管理工具
+
+用法: secgate <命令>
+
+命令:
+    setup      首次部署（安装依赖 + 配置系统服务 + 启动）
+    start      启动所有服务
+    stop       停止所有服务
+    restart    重启所有服务
+    status     查看运行状态
+    creds      查看登录凭证
+    version    查看版本号
+    update     更新到最新版本
+
+快速开始:
+    git clone https://github.com/user/secgate.git /opt/secgate
+    cd /opt/secgate && sudo ./secgate setup
+
+日常管理:
+    secgate start     # 启动
+    secgate creds     # 查看密码
+    secgate status    # 查看状态
+"""
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
+        print(HELP)
+        sys.exit(0)
+
+    cmd = sys.argv[1]
+    if cmd not in COMMANDS:
+        print(f"未知命令: {cmd}")
+        print(HELP)
+        sys.exit(1)
+
+    COMMANDS[cmd]()
