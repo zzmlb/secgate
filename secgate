@@ -205,26 +205,27 @@ def cmd_creds():
     creds = get_credentials()
     ip = get_public_ip()
     print()
-    print("=" * 50)
-    print("  SecGate 登录凭证")
-    print("=" * 50)
-    print(f"  看板地址:      http://{ip}:5000")
-    print(f"  用户名:        admin")
-    print(f"  密码:          {mask_secret(creds.get('dashboard_password', ''))}")
-    print(f"  网关密钥:      {creds.get('gateway_secret', '未生成')[:16]}...")
+    print("  访问地址:  http://{ip}:5000".format(ip=ip))
     print()
+    print("  第一步 — 网关认证（非白名单 IP 需要）:")
     gw_config = os.path.join(PROJECT_DIR, "gateway", "config.json")
     if os.path.exists(gw_config):
         with open(gw_config) as f:
             cfg = json.load(f)
         tokens = cfg.get("tokens", {})
         if tokens:
-            print("  网关 Token:")
             for t, info in tokens.items():
-                print(f"    {info.get('name', 'unnamed'):10s}  {t[:8]}...{t[-4:]}")
+                print(f"  Token:     {t}")
+                print(f"  名称:      {info.get('name', 'unnamed')}")
+        else:
+            print("  (暂无 Token，请在管理页面创建)")
+    else:
+        print("  (网关配置未初始化)")
     print()
-    print(f"  凭证文件:  {os.path.join(PROJECT_DIR, '.credentials.json')}")
-    print("=" * 50)
+    print("  第二步 — 看板登录:")
+    print(f"  用户名:    admin")
+    print(f"  密码:      {creds.get('dashboard_password', '未生成')}")
+    print()
 
 
 def cmd_version():
@@ -293,14 +294,37 @@ def cmd_setup():
     print("  Python 依赖安装完成")
 
     # 4. 生成凭证
-    print("\n[4/6] 生成凭证...")
-    # 触发凭证自动生成（通过 import）
+    print("\n[4/6] 生成安全凭证...")
     from shared import get_or_create_credential
     import secrets as _secrets
     gw_secret = get_or_create_credential("gateway_secret", lambda: _secrets.token_hex(32))
     db_pass = get_or_create_credential("dashboard_password", lambda: _secrets.token_urlsafe(12))
-    print(f"  Dashboard 密码: {mask_secret(db_pass)}")
-    print(f"  凭证文件: {os.path.join(PROJECT_DIR, '.credentials.json')}")
+    print(f"  Dashboard 密码已生成")
+    print(f"  网关签名密钥已生成")
+
+    # 初始化网关配置（生成默认 Token、端口保护，必须在 Nginx/UFW 之前）
+    gw_config_path = os.path.join(PROJECT_DIR, "gateway", "config.json")
+    if not os.path.exists(gw_config_path):
+        from datetime import datetime
+        default_token = _secrets.token_hex(32)
+        gw_cfg = {
+            "tokens": {
+                default_token: {
+                    "name": "default",
+                    "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+            },
+            "ip_whitelist": [],
+            "protected_ports": {
+                "5000": {"nginx_port": 25000, "type": "standard", "comment": "安全监控看板"},
+                "8502": {"nginx_port": 28502, "type": "chainlit", "comment": "AI 安全助手"},
+            },
+        }
+        with open(gw_config_path, "w") as f:
+            json.dump(gw_cfg, f, indent=2, ensure_ascii=False)
+        print("  网关认证 Token 已生成")
+    else:
+        print("  网关配置已存在，跳过")
 
     # 5. 配置 Nginx + iptables
     print("\n[5/6] 配置 Nginx 网关...")
@@ -317,12 +341,11 @@ def cmd_setup():
     print("\n[6/6] 配置 iptables...")
     subprocess.run(["bash", os.path.join(PROJECT_DIR, "gateway", "setup-iptables.sh")])
 
-    # 6. 配置 UFW 防火墙（自动放行受保护端口及其 Nginx 代理端口）
+    # 配置 UFW 防火墙（根据 config.json 放行受保护端口及其 Nginx 代理端口）
     print("\n[+] 配置 UFW 防火墙...")
-    ufw_ports = {"22": "SSH", "5000": "Dashboard"}
-    gw_config = os.path.join(PROJECT_DIR, "gateway", "config.json")
-    if os.path.exists(gw_config):
-        with open(gw_config) as f:
+    ufw_ports = {"22": "SSH", "5002": "Gateway"}
+    if os.path.exists(gw_config_path):
+        with open(gw_config_path) as f:
             cfg = json.load(f)
         for port_str, info in cfg.get("protected_ports", {}).items():
             comment = info.get("comment", f"端口 {port_str}")
@@ -370,7 +393,11 @@ WantedBy=multi-user.target
     print("\n[+] 启动服务...")
     cmd_start()
 
-    print("\n部署完成！")
+    # 部署完成，展示全部凭证（含 Token）
+    print("\n" + "=" * 50)
+    print("  部署完成！以下是登录凭证")
+    print("=" * 50)
+    cmd_creds()
 
 
 COMMANDS = {
@@ -400,7 +427,7 @@ SecGate - 安全网关一体化管理工具
     update     更新到最新版本
 
 快速开始:
-    git clone https://github.com/user/secgate.git /opt/secgate
+    git clone https://github.com/zzmlb/secgate.git /opt/secgate
     cd /opt/secgate && sudo ./secgate setup
 
 日常管理:
