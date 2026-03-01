@@ -308,7 +308,7 @@ def cmd_setup():
     if os.path.exists(src) and not os.path.exists(dst):
         os.symlink(src, dst)
     subprocess.run(["nginx", "-t"], capture_output=True)
-    subprocess.run(["nginx", "-s", "reload"], capture_output=True, stderr=subprocess.DEVNULL)
+    subprocess.run(["nginx", "-s", "reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     print("\n[6/6] 配置 iptables...")
     subprocess.run(["bash", os.path.join(PROJECT_DIR, "gateway", "setup-iptables.sh")])
