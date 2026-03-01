@@ -184,9 +184,40 @@ def auth_callback(username: str, password: str):
     return None
 
 
+def _check_claude_cli() -> bool:
+    """检查 claude CLI 是否可用"""
+    import shutil
+    return shutil.which(CLAUDE_CMD) is not None
+
+
 @cl.on_chat_start
 async def on_start():
-    """对话开始时的欢迎信息"""
+    """对话开始时的欢迎信息，检测 Claude CLI 是否可用"""
+    if not _check_claude_cli():
+        await cl.Message(
+            content=(
+                "## AI 助手尚未激活\n\n"
+                "AI 安全助手需要 **Claude Code CLI** 才能工作。请按以下步骤配置：\n\n"
+                "**1. 安装 Claude Code CLI：**\n"
+                "```bash\n"
+                "npm install -g @anthropic-ai/claude-code\n"
+                "```\n\n"
+                "**2. 设置 API Key（二选一）：**\n"
+                "```bash\n"
+                "# 方式 A：直接登录（推荐，自动获取凭证）\n"
+                "claude login\n\n"
+                "# 方式 B：设置 API Key 环境变量\n"
+                "export ANTHROPIC_API_KEY=sk-ant-xxx\n"
+                "```\n\n"
+                "**3. 重启 SecGate 服务：**\n"
+                "```bash\n"
+                "secgate restart\n"
+                "```\n\n"
+                "配置完成后刷新此页面即可开始对话。"
+            )
+        ).send()
+        return
+
     await cl.Message(
         content=(
             "你好！我是 **SecGate AI 安全助手**。\n\n"
@@ -206,6 +237,12 @@ async def on_message(message: cl.Message):
     """处理用户消息"""
     user_input = message.content.strip()
     if not user_input:
+        return
+
+    if not _check_claude_cli():
+        await cl.Message(
+            content="AI 助手尚未激活，请先安装 Claude Code CLI 并配置 API Key。详见上方说明。"
+        ).send()
         return
 
     reply = cl.Message(content="")
