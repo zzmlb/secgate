@@ -46,9 +46,8 @@ if [[ -d "$INSTALL_DIR" ]]; then
     for f in .credentials.json gateway/config.json; do
         [[ -f "$INSTALL_DIR/$f" ]] && cp "$INSTALL_DIR/$f" "$BACKUP_DIR/" && info "  备份 $f"
     done
-    for d in dashboard/data scanner/data; do
-        [[ -d "$INSTALL_DIR/$d" ]] && cp -r "$INSTALL_DIR/$d" "$BACKUP_DIR/$(basename $d)-data" && info "  备份 $d/"
-    done
+    [[ -d "$INSTALL_DIR/dashboard/data" ]] && cp -r "$INSTALL_DIR/dashboard/data" "$BACKUP_DIR/dashboard-data" && info "  备份 dashboard/data/"
+    [[ -d "$INSTALL_DIR/scanner/data" ]] && cp -r "$INSTALL_DIR/scanner/data" "$BACKUP_DIR/scanner-data" && info "  备份 scanner/data/"
     # 停止服务
     [[ -f "$INSTALL_DIR/secgate" ]] && python3 "$INSTALL_DIR/secgate" stop 2>/dev/null || true
 fi
@@ -85,8 +84,8 @@ if [[ -d "$BACKUP_DIR" ]]; then
     info "恢复备份数据..."
     [[ -f "$BACKUP_DIR/.credentials.json" ]] && cp "$BACKUP_DIR/.credentials.json" "$INSTALL_DIR/"
     [[ -f "$BACKUP_DIR/config.json" ]] && mkdir -p "$INSTALL_DIR/gateway" && cp "$BACKUP_DIR/config.json" "$INSTALL_DIR/gateway/"
-    [[ -d "$BACKUP_DIR/data-data" ]] && cp -r "$BACKUP_DIR/data-data" "$INSTALL_DIR/dashboard/data"
-    [[ -d "$BACKUP_DIR/scanner-data" ]] && cp -r "$BACKUP_DIR/scanner-data" "$INSTALL_DIR/scanner/data"
+    [[ -d "$BACKUP_DIR/dashboard-data" ]] && mkdir -p "$INSTALL_DIR/dashboard" && cp -r "$BACKUP_DIR/dashboard-data" "$INSTALL_DIR/dashboard/data"
+    [[ -d "$BACKUP_DIR/scanner-data" ]] && mkdir -p "$INSTALL_DIR/scanner" && cp -r "$BACKUP_DIR/scanner-data" "$INSTALL_DIR/scanner/data"
     rm -rf "$BACKUP_DIR"
 fi
 

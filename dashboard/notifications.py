@@ -329,7 +329,7 @@ class AlertEngine(threading.Thread):
 
             listening = get_listening_ports()
             protected_ports = set()
-            config_path = '/root/pj226/gateway/config.json'
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'gateway', 'config.json')
             if os.path.exists(config_path):
                 with open(config_path, 'r') as f:
                     cfg = json.load(f)
