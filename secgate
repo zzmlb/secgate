@@ -20,7 +20,7 @@ import signal
 import subprocess
 import time
 
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.realpath(__file__))
 PID_FILE = os.path.join(PROJECT_DIR, ".pids.json")
 sys.path.insert(0, PROJECT_DIR)
 
