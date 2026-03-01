@@ -1995,16 +1995,19 @@ def api_unprotected_ports():
 @app.route("/api/gateway/<path:path>", methods=["GET", "POST", "DELETE"])
 @requires_auth
 def proxy_gateway(path):
-    """代理网关 API 请求到认证服务"""
+    """代理网关 API 请求到认证服务
+
+    Dashboard 已通过 @requires_auth 验证用户身份，
+    代理请求不传 X-Real-IP，让 Gateway 看到 127.0.0.1（本机信任）自动放行。
+    """
     url = f"{GATEWAY_URL}/auth/api/{path}"
-    headers = {"X-Real-IP": request.headers.get("X-Real-IP", request.remote_addr)}
     try:
         if request.method == "GET":
-            resp = http_requests.get(url, headers=headers, timeout=5)
+            resp = http_requests.get(url, timeout=5)
         elif request.method == "POST":
-            resp = http_requests.post(url, headers=headers, json=request.get_json(silent=True), timeout=5)
+            resp = http_requests.post(url, json=request.get_json(silent=True), timeout=5)
         elif request.method == "DELETE":
-            resp = http_requests.delete(url, headers=headers, timeout=5)
+            resp = http_requests.delete(url, timeout=5)
         return (resp.content, resp.status_code, {"Content-Type": "application/json"})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
