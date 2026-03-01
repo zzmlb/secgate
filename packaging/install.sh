@@ -28,14 +28,22 @@ command -v python3 >/dev/null || error "未找到 python3，请先安装: apt-ge
 
 # 解析版本
 if [[ "$VERSION" == "latest" ]]; then
-    # 尝试从 GitHub API 获取最新版本
-    DOWNLOAD_URL="${REPO_URL}/releases/latest/download/secgate.tar.gz"
-    VERSION_DISPLAY="最新版"
+    # 从 GitHub API 获取最新版本号
+    LATEST_TAG=$(curl -fsSL -o /dev/null -w '%{redirect_url}' "${REPO_URL}/releases/latest" | grep -oP 'v[\d.]+$' || true)
+    if [[ -n "$LATEST_TAG" ]]; then
+        VERSION="${LATEST_TAG#v}"
+    else
+        # 备选：直接尝试 API
+        VERSION=$(curl -fsSL "https://api.github.com/repos/zzmlb/secgate/releases/latest" 2>/dev/null | grep -oP '"tag_name"\s*:\s*"v?\K[^"]+' || true)
+    fi
+    [[ -z "$VERSION" ]] && error "无法获取最新版本号，请指定版本: sudo bash install.sh 1.1.0"
+    VERSION_DISPLAY="v${VERSION}"
 else
     VERSION="${VERSION#v}"  # 去掉 v 前缀
-    DOWNLOAD_URL="${REPO_URL}/releases/download/v${VERSION}/secgate-${VERSION}.tar.gz"
     VERSION_DISPLAY="v${VERSION}"
 fi
+
+DOWNLOAD_URL="${REPO_URL}/releases/download/v${VERSION}/secgate-${VERSION}.tar.gz"
 
 info "安装 SecGate ${VERSION_DISPLAY}"
 
