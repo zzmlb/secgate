@@ -43,9 +43,10 @@ GATEWAY_DIR = os.path.dirname(__file__)
 # 不允许保护的系统端口
 EXCLUDED_PORTS = {22, 53, 5002}
 
-# 默认受保护端口（仅保护 Dashboard，其余由用户通过管理页面添加）
+# 默认受保护端口（Dashboard + AI 助手，其余由用户通过管理页面添加）
 DEFAULT_PROTECTED_PORTS = {
     "5000": {"nginx_port": 25000, "type": "standard", "comment": "安全监控看板"},
+    "8502": {"nginx_port": 28502, "type": "chainlit", "comment": "AI 安全助手"},
 }
 
 serializer = URLSafeTimedSerializer(SECRET_KEY)
