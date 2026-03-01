@@ -1,4 +1,7 @@
-"""SecGate AI 安全助手 - Chainlit + Claude Code CLI（stream-json 模式）
+"""SecGate AI 安全助手 - Chainlit 双模式（Claude CLI / OpenAI 兼容 API）
+
+模式一：检测到 Claude CLI + Anthropic API Key → 使用 Claude Code CLI（完整 Agent 能力）
+模式二：Dashboard 配置了 LLM（千问/DeepSeek/OpenAI 等）→ 使用 OpenAI 兼容 API（纯对话）
 
 双层认证：
   第一层：网关 iptables + Nginx auth_request（gw_token cookie，非白名单 IP 必须通过）
@@ -10,6 +13,7 @@ import sys
 import json
 import asyncio
 
+import httpx
 import chainlit as cl
 
 # 项目根目录
@@ -31,35 +35,11 @@ ADMIN_PASS = get_or_create_credential(
     "dashboard_password", lambda: __import__("secrets").token_urlsafe(12)
 )
 
-# 工具名称中文映射
-TOOL_NAMES = {
-    "Bash": "执行命令",
-    "Read": "读取文件",
-    "Glob": "搜索文件",
-    "Grep": "搜索内容",
-}
+# 对话历史最大轮数（OpenAI 兼容模式使用）
+MAX_HISTORY = 20
 
 
-def _get_api_key() -> str:
-    """从环境变量或 .credentials.json 获取 API Key（动态读取，无需重启）"""
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not key:
-        creds = load_credentials()
-        key = creds.get("anthropic_api_key", "")
-    return key
-
-
-def _build_env() -> dict:
-    """构建子进程环境变量"""
-    env = os.environ.copy()
-    env["DISABLE_CLAUDE_TELEMETRY"] = "1"
-    env.pop("CLAUDECODE", None)
-    # 动态读取 API Key，Dashboard 设置后无需重启
-    api_key = _get_api_key()
-    if api_key:
-        env["ANTHROPIC_API_KEY"] = api_key
-    return env
-
+# ============ 通用函数 ============
 
 def _load_system_prompt() -> str:
     """读取 CLAUDE.md 作为系统指令"""
@@ -69,15 +49,56 @@ def _load_system_prompt() -> str:
     return ""
 
 
-def _truncate(text: str, max_len: int = 500) -> str:
-    """截断过长文本"""
-    if len(text) <= max_len:
-        return text
-    return text[:max_len] + f"\n... (共 {len(text)} 字符)"
+def _check_claude_cli() -> bool:
+    """检查 claude CLI 是否可用"""
+    import shutil
+    return shutil.which(CLAUDE_CMD) is not None
+
+
+def _get_anthropic_key() -> str:
+    """获取 Anthropic API Key（环境变量或凭证文件）"""
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not key:
+        creds = load_credentials()
+        key = creds.get("anthropic_api_key", "")
+    return key
+
+
+def _get_llm_config() -> dict | None:
+    """从 .credentials.json 读取 LLM 配置（Dashboard 设置的 OpenAI 兼容 API）"""
+    creds = load_credentials()
+    api_base = creds.get("llm_api_base", "")
+    api_key = creds.get("llm_api_key", "")
+    model = creds.get("llm_model", "")
+    if api_base and api_key and model:
+        return {"api_base": api_base.rstrip("/"), "api_key": api_key, "model": model}
+    return None
+
+
+def _detect_mode() -> str:
+    """检测当前可用模式：'claude_cli' / 'openai_api' / 'none'"""
+    if _check_claude_cli() and _get_anthropic_key():
+        return "claude_cli"
+    if _get_llm_config():
+        return "openai_api"
+    return "none"
+
+
+# ============ 模式一：Claude Code CLI ============
+
+def _build_env() -> dict:
+    """构建 Claude CLI 子进程环境变量"""
+    env = os.environ.copy()
+    env["DISABLE_CLAUDE_TELEMETRY"] = "1"
+    env.pop("CLAUDECODE", None)
+    api_key = _get_anthropic_key()
+    if api_key:
+        env["ANTHROPIC_API_KEY"] = api_key
+    return env
 
 
 async def call_claude(prompt: str, reply: cl.Message):
-    """调用 Claude Code CLI，解析 stream-json 事件流，展示思考过程"""
+    """调用 Claude Code CLI，解析 stream-json 事件流"""
     system_prompt = _load_system_prompt()
     cmd = [
         CLAUDE_CMD,
@@ -102,8 +123,6 @@ async def call_claude(prompt: str, reply: cl.Message):
         env=env,
     )
 
-    # 跟踪活跃的 tool_use Step，key = tool_use_id
-    active_steps = {}
     line_buffer = b""
 
     while True:
@@ -112,7 +131,6 @@ async def call_claude(prompt: str, reply: cl.Message):
             break
         line_buffer += chunk
 
-        # 按行解析 JSON
         while b"\n" in line_buffer:
             line, line_buffer = line_buffer.split(b"\n", 1)
             line_str = line.decode("utf-8", errors="replace").strip()
@@ -122,22 +140,19 @@ async def call_claude(prompt: str, reply: cl.Message):
                 event = json.loads(line_str)
             except json.JSONDecodeError:
                 continue
+            await _handle_cli_event(event, reply)
 
-            await _handle_event(event, reply, active_steps)
-
-    # 处理缓冲区剩余数据
     if line_buffer:
         line_str = line_buffer.decode("utf-8", errors="replace").strip()
         if line_str:
             try:
                 event = json.loads(line_str)
-                await _handle_event(event, reply, active_steps)
+                await _handle_cli_event(event, reply)
             except json.JSONDecodeError:
                 pass
 
     await process.wait()
 
-    # 如果执行失败，追加错误信息
     if process.returncode != 0:
         stderr_data = await process.stderr.read()
         stderr_text = stderr_data.decode("utf-8", errors="replace").strip()
@@ -148,10 +163,9 @@ async def call_claude(prompt: str, reply: cl.Message):
             )
 
 
-async def _handle_event(event: dict, reply: cl.Message, active_steps: dict):
-    """处理单个 stream-json 事件"""
+async def _handle_cli_event(event: dict, reply: cl.Message):
+    """处理 Claude CLI stream-json 事件"""
     evt_type = event.get("type", "")
-
     if evt_type == "assistant":
         contents = event.get("message", {}).get("content", [])
         for block in contents:
@@ -160,34 +174,63 @@ async def _handle_event(event: dict, reply: cl.Message, active_steps: dict):
                 if text:
                     await reply.stream_token(text)
 
-    elif evt_type == "result":
-        pass
+
+# ============ 模式二：OpenAI 兼容 API ============
+
+async def call_openai_api(messages: list, reply: cl.Message):
+    """调用 OpenAI 兼容 API，SSE 流式输出"""
+    config = _get_llm_config()
+    if not config:
+        await reply.stream_token("**LLM 未配置**，请前往 Dashboard > AI 安全 > 助手设置 配置。")
+        return
+
+    url = config["api_base"] + "/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {config['api_key']}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": config["model"],
+        "messages": messages,
+        "stream": True,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
+            async with client.stream("POST", url, headers=headers, json=payload) as resp:
+                if resp.status_code != 200:
+                    body = await resp.aread()
+                    err_text = body.decode("utf-8", errors="replace")[:300]
+                    await reply.stream_token(f"**LLM 请求失败** (HTTP {resp.status_code})\n```\n{err_text}\n```")
+                    return
+
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = chunk.get("choices", [])
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        await reply.stream_token(content)
+
+    except httpx.ConnectError:
+        await reply.stream_token("\n\n**连接失败**，请检查 API 地址是否正确。")
+    except httpx.ReadTimeout:
+        await reply.stream_token("\n\n**响应超时**，请稍后重试。")
+    except Exception as e:
+        await reply.stream_token(f"\n\n**调用异常**: {e}")
 
 
-def _format_tool_input(tool_name: str, tool_input: dict) -> str:
-    """格式化工具输入为可读文本"""
-    if tool_name == "Bash":
-        cmd = tool_input.get("command", "")
-        desc = tool_input.get("description", "")
-        if desc:
-            return f"{desc}\n```bash\n{cmd}\n```"
-        return f"```bash\n{cmd}\n```"
-
-    elif tool_name == "Read":
-        return f"`{tool_input.get('file_path', '')}`"
-
-    elif tool_name == "Glob":
-        pattern = tool_input.get("pattern", "")
-        path = tool_input.get("path", "")
-        return f"`{pattern}`" + (f" in `{path}`" if path else "")
-
-    elif tool_name == "Grep":
-        pattern = tool_input.get("pattern", "")
-        path = tool_input.get("path", "")
-        return f"`{pattern}`" + (f" in `{path}`" if path else "")
-
-    return f"```json\n{json.dumps(tool_input, ensure_ascii=False, indent=2)}\n```"
-
+# ============ Chainlit 事件 ============
 
 @cl.password_auth_callback
 def auth_callback(username: str, password: str):
@@ -197,47 +240,32 @@ def auth_callback(username: str, password: str):
     return None
 
 
-def _check_claude_cli() -> bool:
-    """检查 claude CLI 是否可用"""
-    import shutil
-    return shutil.which(CLAUDE_CMD) is not None
-
-
 @cl.on_chat_start
 async def on_start():
-    """对话开始时的欢迎信息，检测 Claude CLI 是否可用"""
-    has_cli = _check_claude_cli()
-    has_key = bool(_get_api_key())
+    """对话开始时检测模式并欢迎"""
+    mode = _detect_mode()
+    cl.user_session.set("mode", mode)
 
-    if not has_cli or not has_key:
-        missing = []
-        if not has_cli:
-            missing.append(
-                "**安装 Claude Code CLI：**\n"
-                "```bash\n"
-                "curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -\n"
-                "apt-get install -y nodejs\n"
-                "npm install -g @anthropic-ai/claude-code\n"
-                "secgate restart\n"
-                "```"
-            )
-        if not has_key:
-            missing.append(
-                "**设置 API Key：**\n"
-                "请前往 **Dashboard > AI 安全 > 助手设置** 页面配置 Anthropic API Key，\n"
-                "或直接在下方对话框中粘贴（以 `sk-ant-` 开头）。\n\n"
-                "API Key 获取：访问 [Anthropic Console](https://console.anthropic.com/) 创建密钥。"
-            )
-
-        steps = "\n\n".join(missing)
+    if mode == "none":
         await cl.Message(
-            content=f"## AI 助手尚未激活\n\n{steps}"
+            content=(
+                "## AI 助手尚未配置\n\n"
+                "请选择以下任一方式激活：\n\n"
+                "**方式一：Dashboard 页面配置（推荐）**\n"
+                "前往 **Dashboard > AI 安全 > 助手设置**，填入 API 地址、密钥和模型名。\n"
+                "支持通义千问、DeepSeek、OpenAI 等 OpenAI 兼容 API。\n\n"
+                "**方式二：Claude Code CLI**\n"
+                "安装 Claude CLI 并配置 Anthropic API Key，可获得完整 Agent 能力（执行命令、读取文件）。"
+            )
         ).send()
         return
 
+    cl.user_session.set("history", [])
+
+    mode_label = "Claude Code CLI" if mode == "claude_cli" else "OpenAI 兼容 API"
     await cl.Message(
         content=(
-            "你好！我是 **SecGate AI 安全助手**。\n\n"
+            f"你好！我是 **SecGate AI 安全助手**（{mode_label}）。\n\n"
             "我可以帮你：\n"
             "- 分析服务器安全状态（SSH 攻击、防火墙拦截）\n"
             "- 查看网关认证配置和端口保护\n"
@@ -251,50 +279,45 @@ async def on_start():
 
 @cl.on_message
 async def on_message(message: cl.Message):
-    """处理用户消息，支持在对话中直接设置 API Key"""
+    """处理用户消息"""
     user_input = message.content.strip()
     if not user_input:
         return
 
-    # 检测用户是否在粘贴 API Key
-    if user_input.startswith("sk-ant-"):
-        from shared import load_credentials, save_credentials
-        creds = load_credentials()
-        creds["anthropic_api_key"] = user_input
-        save_credentials(creds)
-        os.environ["ANTHROPIC_API_KEY"] = user_input
+    # 重新检测模式（配置可能在对话中途更新）
+    mode = _detect_mode()
+    if mode == "none":
         await cl.Message(
-            content=(
-                "API Key 已保存并激活！\n\n"
-                + ("Claude Code CLI 已就绪，你现在可以开始提问了。"
-                   if _check_claude_cli()
-                   else "还需要安装 Claude Code CLI，请在服务器上执行：\n"
-                        "```bash\n"
-                        "curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -\n"
-                        "apt-get install -y nodejs\n"
-                        "npm install -g @anthropic-ai/claude-code\n"
-                        "secgate restart\n"
-                        "```")
-            )
-        ).send()
-        return
-
-    # 检查依赖是否就绪
-    if not _check_claude_cli():
-        await cl.Message(
-            content="请先安装 Claude Code CLI。详见上方说明。"
-        ).send()
-        return
-
-    if not _get_api_key():
-        await cl.Message(
-            content="请先设置 API Key：前往 Dashboard > AI 安全 > 助手设置 配置，或直接在对话框中粘贴（以 `sk-ant-` 开头）。"
+            content="**AI 助手未配置**\n\n请前往 Dashboard > AI 安全 > 助手设置 配置 LLM 后刷新页面。"
         ).send()
         return
 
     reply = cl.Message(content="")
     await reply.send()
 
-    await call_claude(user_input, reply)
+    if mode == "claude_cli":
+        await call_claude(user_input, reply)
+    else:
+        # OpenAI 兼容 API 模式：维护对话历史
+        history = cl.user_session.get("history")
+        if history is None:
+            history = []
+            cl.user_session.set("history", history)
+
+        system_prompt = _load_system_prompt()
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.extend(history)
+        messages.append({"role": "user", "content": user_input})
+
+        await call_openai_api(messages, reply)
+
+        # 更新对话历史
+        history.append({"role": "user", "content": user_input})
+        history.append({"role": "assistant", "content": reply.content})
+        if len(history) > MAX_HISTORY * 2:
+            history[:] = history[-(MAX_HISTORY * 2):]
+        cl.user_session.set("history", history)
 
     await reply.update()

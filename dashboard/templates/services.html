@@ -2953,18 +2953,28 @@
 
             <!-- 助手设置 -->
             <div id="stab-ai-ai-assistant" class="sub-tab-content">
-                <div class="section-title">AI 助手 API Key</div>
-                <p style="color:var(--text-secondary);font-size:13px;margin:0 0 18px;">配置 Anthropic API Key 以激活 AI 安全助手（基于 Claude Code CLI）。获取密钥：<a href="https://console.anthropic.com/" target="_blank" style="color:var(--accent-cyan);">Anthropic Console</a></p>
+                <div class="section-title">AI 助手 LLM 配置</div>
+                <p style="color:var(--text-secondary);font-size:13px;margin:0 0 18px;">配置 AI 安全助手使用的大语言模型，支持通义千问、DeepSeek、OpenAI 等 OpenAI 兼容 API。保存后自动生效，无需重启。</p>
                 <div class="panel full-width" style="max-width:600px;">
                     <div class="panel-body" style="padding:20px;">
-                        <div style="margin-bottom:20px;">
-                            <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text-primary);">Anthropic API Key</label>
-                            <input type="password" id="llmApiKey" placeholder="sk-ant-..."
+                        <div style="margin-bottom:16px;">
+                            <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text-primary);">API 地址</label>
+                            <input type="text" id="llmApiBase" placeholder="如 https://dashscope.aliyuncs.com/compatible-mode/v1"
                                    style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:6px;background:var(--card-bg);color:var(--text-primary);font-size:13px;box-sizing:border-box;">
-                            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">保存后 AI 助手将在下次对话时自动生效，无需重启服务</div>
+                            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">OpenAI 兼容的接口基础地址（不含 /chat/completions）</div>
+                        </div>
+                        <div style="margin-bottom:16px;">
+                            <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text-primary);">API 密钥</label>
+                            <input type="password" id="llmApiKey" placeholder="sk-..."
+                                   style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:6px;background:var(--card-bg);color:var(--text-primary);font-size:13px;box-sizing:border-box;">
+                        </div>
+                        <div style="margin-bottom:20px;">
+                            <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text-primary);">模型名称</label>
+                            <input type="text" id="llmModel" placeholder="如 qwen-plus、deepseek-chat、gpt-4o"
+                                   style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:6px;background:var(--card-bg);color:var(--text-primary);font-size:13px;box-sizing:border-box;">
                         </div>
                         <div style="display:flex;gap:10px;">
-                            <button onclick="saveLlmSettings()" style="padding:9px 24px;border:none;border-radius:6px;background:var(--accent-cyan);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">保存</button>
+                            <button onclick="saveLlmSettings()" style="padding:9px 24px;border:none;border-radius:6px;background:var(--accent-cyan);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">保存配置</button>
                             <button onclick="testLlmConnection()" style="padding:9px 24px;border:none;border-radius:6px;background:transparent;border:1px solid var(--accent-cyan);color:var(--accent-cyan);font-size:13px;font-weight:600;cursor:pointer;">测试连接</button>
                         </div>
                         <div id="llmSettingsMsg" style="margin-top:12px;font-size:13px;display:none;"></div>
@@ -3643,19 +3653,30 @@ function loadLlmSettings() {
     fetch('/api/llm-settings', {headers:{'X-Requested-With':'XMLHttpRequest'}})
         .then(function(r){ return r.json(); })
         .then(function(d){
+            document.getElementById('llmApiBase').value = d.llm_api_base || '';
             document.getElementById('llmApiKey').value = '';
-            document.getElementById('llmApiKey').placeholder = d.api_key || 'sk-ant-...';
+            document.getElementById('llmApiKey').placeholder = d.llm_api_key || 'sk-...';
+            document.getElementById('llmModel').value = d.llm_model || '';
             document.getElementById('llmSettingsMsg').style.display = 'none';
         })
         .catch(function(e){ _llmMsg('加载配置失败: ' + e, false); });
 }
 function saveLlmSettings() {
+    var base = document.getElementById('llmApiBase').value.trim();
     var key = document.getElementById('llmApiKey').value.trim();
-    if (!key) { _llmMsg('请输入 API Key', false); return; }
+    var model = document.getElementById('llmModel').value.trim();
+    if (!base || !model) { _llmMsg('API 地址和模型名不能为空', false); return; }
+    var body = {llm_api_base: base, llm_model: model};
+    if (key) body.llm_api_key = key;
+    else {
+        var ph = document.getElementById('llmApiKey').placeholder;
+        if (!ph || ph === 'sk-...') { _llmMsg('API 密钥不能为空', false); return; }
+        body.llm_api_key = '___KEEP___';
+    }
     fetch('/api/llm-settings', {
         method: 'POST',
         headers: {'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'},
-        body: JSON.stringify({api_key: key})
+        body: JSON.stringify(body)
     })
     .then(function(r){ return r.json(); })
     .then(function(d){

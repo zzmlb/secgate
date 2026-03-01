@@ -266,13 +266,13 @@ def cmd_update():
 
 
 def cmd_set_apikey():
-    """提示用户去 Dashboard 设置 API Key"""
+    """提示用户去 Dashboard 设置 LLM"""
     ip = get_public_ip()
     print()
-    print("  API Key 已改为通过 Dashboard 页面配置。")
+    print("  AI 助手已改为通过 Dashboard 页面配置。")
     print()
     print(f"  请访问: http://{ip}:5000 > AI 安全 > 助手设置")
-    print("  填入 Anthropic API Key（sk-ant-...）并保存即可。")
+    print("  支持通义千问、DeepSeek、OpenAI 等 OpenAI 兼容 API。")
     print()
 
 
@@ -449,8 +449,8 @@ SecGate - 安全网关一体化管理工具
     cd /opt/secgate && sudo ./secgate setup
 
 激活 AI 助手:
-    在 Dashboard > AI 安全 > 助手设置 中配置 Anthropic API Key
-    或命令行: secgate set-apikey
+    在 Dashboard > AI 安全 > 助手设置 中配置 LLM
+    支持通义千问、DeepSeek、OpenAI 等 OpenAI 兼容 API
 
 日常管理:
     secgate start     # 启动

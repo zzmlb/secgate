@@ -2055,82 +2055,95 @@ def api_notifications_count():
     return jsonify({"unread_count": get_unread_count()})
 
 
-# ============ AI 助手 API Key 设置 ============
+# ============ AI 助手 LLM 设置 ============
+
+def _mask_key(key):
+    if not key:
+        return ""
+    if len(key) > 8:
+        return key[:4] + "*" * (len(key) - 8) + key[-4:]
+    return "****"
+
 
 @app.route("/api/llm-settings", methods=["GET"])
 @requires_auth
 def api_llm_settings_get():
-    """读取 Anthropic API Key（脱敏返回）"""
+    """读取 LLM 配置（Key 脱敏返回）"""
     from shared import load_credentials
     creds = load_credentials()
-    api_key = creds.get("anthropic_api_key", "")
-    masked_key = ""
-    if api_key:
-        if len(api_key) > 8:
-            masked_key = api_key[:4] + "*" * (len(api_key) - 8) + api_key[-4:]
-        else:
-            masked_key = "****"
     return jsonify({
-        "api_key": masked_key,
-        "configured": bool(api_key),
+        "llm_api_base": creds.get("llm_api_base", ""),
+        "llm_api_key": _mask_key(creds.get("llm_api_key", "")),
+        "llm_model": creds.get("llm_model", ""),
+        "configured": bool(creds.get("llm_api_key") and creds.get("llm_api_base") and creds.get("llm_model")),
     })
 
 
 @app.route("/api/llm-settings", methods=["POST"])
 @requires_auth
 def api_llm_settings_post():
-    """保存 Anthropic API Key 到 .credentials.json"""
+    """保存 LLM 配置到 .credentials.json"""
     from shared import load_credentials, save_credentials
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "请求体不能为空"}), 400
 
-    api_key = (data.get("api_key") or "").strip()
-    if not api_key:
-        return jsonify({"error": "API Key 不能为空"}), 400
+    api_base = (data.get("llm_api_base") or "").strip()
+    api_key = (data.get("llm_api_key") or "").strip()
+    model = (data.get("llm_model") or "").strip()
+
+    if not api_base or not model:
+        return jsonify({"error": "API 地址和模型名不能为空"}), 400
 
     creds = load_credentials()
-    creds["anthropic_api_key"] = api_key
+    creds["llm_api_base"] = api_base.rstrip("/")
+    # ___KEEP___ 表示前端未修改密钥，保留已有值
+    if api_key and api_key != "___KEEP___":
+        creds["llm_api_key"] = api_key
+    elif not creds.get("llm_api_key"):
+        return jsonify({"error": "API 密钥不能为空"}), 400
+    creds["llm_model"] = model
     save_credentials(creds)
-    return jsonify({"ok": True, "message": "API Key 已保存，AI 助手将在下次对话时自动生效。"})
+    return jsonify({"ok": True, "message": "配置已保存，AI 助手将在下次对话时自动生效。"})
 
 
 @app.route("/api/llm-settings/test", methods=["GET"])
 @requires_auth
 def api_llm_settings_test():
-    """测试 API Key 是否有效（用 requests 调 Anthropic API）"""
+    """测试 LLM 连接（发一条简短请求验证）"""
     import requests as http_req
     from shared import load_credentials
     creds = load_credentials()
-    api_key = creds.get("anthropic_api_key", "")
+    api_base = creds.get("llm_api_base", "")
+    api_key = creds.get("llm_api_key", "")
+    model = creds.get("llm_model", "")
 
-    if not api_key:
-        return jsonify({"ok": False, "error": "未配置 API Key，请先保存"})
+    if not api_base or not api_key or not model:
+        return jsonify({"ok": False, "error": "未完成配置，请先保存设置"})
 
     try:
+        url = api_base.rstrip("/") + "/chat/completions"
         resp = http_req.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 16,
-                "messages": [{"role": "user", "content": "Hi"}],
-            },
+            url,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "messages": [{"role": "user", "content": "Hi"}], "max_tokens": 16},
             timeout=15,
         )
         if resp.status_code == 200:
-            return jsonify({"ok": True, "message": "API Key 有效，连接成功！"})
+            body = resp.json()
+            content = ""
+            choices = body.get("choices", [])
+            if choices:
+                content = choices[0].get("message", {}).get("content", "")
+            return jsonify({"ok": True, "message": f"连接成功！模型回复: {content[:60]}"})
         elif resp.status_code == 401:
-            return jsonify({"ok": False, "error": "API Key 无效，请检查后重新输入"})
+            return jsonify({"ok": False, "error": "API Key 无效（401），请检查密钥"})
         else:
-            err_text = resp.text[:200]
-            return jsonify({"ok": False, "error": f"HTTP {resp.status_code}: {err_text}"})
+            return jsonify({"ok": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"})
     except http_req.exceptions.Timeout:
-        return jsonify({"ok": False, "error": "连接超时，请检查网络"})
+        return jsonify({"ok": False, "error": "连接超时（15s），请检查 API 地址"})
+    except http_req.exceptions.ConnectionError:
+        return jsonify({"ok": False, "error": "无法连接，请检查 API 地址是否正确"})
     except Exception as e:
         return jsonify({"ok": False, "error": f"测试失败: {str(e)[:200]}"})
 
