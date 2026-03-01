@@ -123,11 +123,16 @@ def cmd_start():
             env["DISABLE_CLAUDE_TELEMETRY"] = "1"
             env.pop("CLAUDECODE", None)
             # Chainlit 密码认证需要 JWT secret
-            from shared import get_or_create_credential
+            from shared import get_or_create_credential, load_credentials
             import secrets as _sec
             env["CHAINLIT_AUTH_SECRET"] = get_or_create_credential(
                 "chainlit_auth_secret", lambda: _sec.token_hex(32)
             )
+            # 传入 Anthropic API Key（如果已配置）
+            stored_creds = load_credentials()
+            api_key = stored_creds.get("anthropic_api_key", "")
+            if api_key:
+                env["ANTHROPIC_API_KEY"] = api_key
             proc = subprocess.Popen(
                 ["chainlit", "run", "app.py", "--host", "0.0.0.0", "--port", str(agent_port)],
                 stdout=open(agent_log, "a"),
@@ -258,6 +263,34 @@ def cmd_update():
     print("[更新] 启动服务...")
     cmd_start()
     print("[更新] 完成!")
+
+
+def cmd_set_apikey():
+    """设置 AI 助手的 Anthropic API Key"""
+    if len(sys.argv) < 3:
+        print("用法: secgate set-apikey <ANTHROPIC_API_KEY>")
+        print()
+        print("设置后重启服务生效: secgate restart")
+        # 显示当前状态
+        from shared import load_credentials
+        creds = load_credentials()
+        key = creds.get("anthropic_api_key", "")
+        if key:
+            print(f"\n当前 API Key: {key[:12]}...{key[-4:]}")
+        else:
+            print("\n当前未设置 API Key")
+        return
+
+    api_key = sys.argv[2].strip()
+    if not api_key.startswith("sk-ant-"):
+        print("警告: API Key 格式可能不正确（通常以 sk-ant- 开头）")
+
+    from shared import load_credentials, save_credentials
+    creds = load_credentials()
+    creds["anthropic_api_key"] = api_key
+    save_credentials(creds)
+    print(f"API Key 已保存: {api_key[:12]}...{api_key[-4:]}")
+    print("重启服务生效: secgate restart")
 
 
 def cmd_setup():
@@ -409,6 +442,7 @@ COMMANDS = {
     "setup": cmd_setup,
     "version": cmd_version,
     "update": cmd_update,
+    "set-apikey": cmd_set_apikey,
 }
 
 HELP = """
@@ -417,18 +451,23 @@ SecGate - 安全网关一体化管理工具
 用法: secgate <命令>
 
 命令:
-    setup      首次部署（安装依赖 + 配置系统服务 + 启动）
-    start      启动所有服务
-    stop       停止所有服务
-    restart    重启所有服务
-    status     查看运行状态
-    creds      查看登录凭证
-    version    查看版本号
-    update     更新到最新版本
+    setup          首次部署（安装依赖 + 配置系统服务 + 启动）
+    start          启动所有服务
+    stop           停止所有服务
+    restart        重启所有服务
+    status         查看运行状态
+    creds          查看登录凭证
+    set-apikey     设置 AI 助手的 Anthropic API Key
+    version        查看版本号
+    update         更新到最新版本
 
 快速开始:
     git clone https://github.com/zzmlb/secgate.git /opt/secgate
     cd /opt/secgate && sudo ./secgate setup
+
+激活 AI 助手:
+    secgate set-apikey sk-ant-xxx
+    secgate restart
 
 日常管理:
     secgate start     # 启动

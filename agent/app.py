@@ -193,28 +193,31 @@ def _check_claude_cli() -> bool:
 @cl.on_chat_start
 async def on_start():
     """对话开始时的欢迎信息，检测 Claude CLI 是否可用"""
-    if not _check_claude_cli():
-        await cl.Message(
-            content=(
-                "## AI 助手尚未激活\n\n"
-                "AI 安全助手需要 **Claude Code CLI** 才能工作。请按以下步骤配置：\n\n"
-                "**1. 安装 Claude Code CLI：**\n"
+    has_cli = _check_claude_cli()
+    has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+
+    if not has_cli or not has_key:
+        missing = []
+        if not has_cli:
+            missing.append(
+                "**安装 Claude Code CLI：**\n"
                 "```bash\n"
+                "curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -\n"
+                "apt-get install -y nodejs\n"
                 "npm install -g @anthropic-ai/claude-code\n"
-                "```\n\n"
-                "**2. 设置 API Key（二选一）：**\n"
-                "```bash\n"
-                "# 方式 A：直接登录（推荐，自动获取凭证）\n"
-                "claude login\n\n"
-                "# 方式 B：设置 API Key 环境变量\n"
-                "export ANTHROPIC_API_KEY=sk-ant-xxx\n"
-                "```\n\n"
-                "**3. 重启 SecGate 服务：**\n"
-                "```bash\n"
                 "secgate restart\n"
-                "```\n\n"
-                "配置完成后刷新此页面即可开始对话。"
+                "```"
             )
+        if not has_key:
+            missing.append(
+                "**设置 API Key：**\n"
+                "请直接在下方对话框中粘贴你的 Anthropic API Key（以 `sk-ant-` 开头），我会自动保存并激活。\n\n"
+                "API Key 获取：访问 [Anthropic Console](https://console.anthropic.com/) 创建密钥。"
+            )
+
+        steps = "\n\n".join(missing)
+        await cl.Message(
+            content=f"## AI 助手尚未激活\n\n{steps}"
         ).send()
         return
 
@@ -234,14 +237,44 @@ async def on_start():
 
 @cl.on_message
 async def on_message(message: cl.Message):
-    """处理用户消息"""
+    """处理用户消息，支持在对话中直接设置 API Key"""
     user_input = message.content.strip()
     if not user_input:
         return
 
+    # 检测用户是否在粘贴 API Key
+    if user_input.startswith("sk-ant-"):
+        from shared import load_credentials, save_credentials
+        creds = load_credentials()
+        creds["anthropic_api_key"] = user_input
+        save_credentials(creds)
+        os.environ["ANTHROPIC_API_KEY"] = user_input
+        await cl.Message(
+            content=(
+                "API Key 已保存并激活！\n\n"
+                + ("Claude Code CLI 已就绪，你现在可以开始提问了。"
+                   if _check_claude_cli()
+                   else "还需要安装 Claude Code CLI，请在服务器上执行：\n"
+                        "```bash\n"
+                        "curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -\n"
+                        "apt-get install -y nodejs\n"
+                        "npm install -g @anthropic-ai/claude-code\n"
+                        "secgate restart\n"
+                        "```")
+            )
+        ).send()
+        return
+
+    # 检查依赖是否就绪
     if not _check_claude_cli():
         await cl.Message(
-            content="AI 助手尚未激活，请先安装 Claude Code CLI 并配置 API Key。详见上方说明。"
+            content="请先安装 Claude Code CLI。详见上方说明。"
+        ).send()
+        return
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        await cl.Message(
+            content="请先设置 API Key：直接在对话框中粘贴你的 Anthropic API Key（以 `sk-ant-` 开头）。"
         ).send()
         return
 
