@@ -6,7 +6,7 @@ set -euo pipefail
 
 INSTALL_DIR="/opt/secgate"
 SYMLINK="/usr/local/bin/secgate"
-REPO_URL="https://github.com/user/secgate"
+REPO_URL="https://github.com/zzmlb/secgate"
 VERSION="${1:-latest}"
 BACKUP_DIR="/tmp/secgate-backup-$(date +%s)"
 
@@ -55,10 +55,11 @@ fi
 # 下载并解压
 info "下载安装包..."
 TMP_TAR="/tmp/secgate-download.tar.gz"
-if ! curl -fsSL -o "$TMP_TAR" "$DOWNLOAD_URL" 2>/dev/null; then
-    # 如果下载失败且有本地文件，尝试本地安装
-    if [[ -f "${BASH_SOURCE[0]}" ]] && [[ -d "$(dirname "${BASH_SOURCE[0]}")/.." ]]; then
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if ! curl -fsSL -o "$TMP_TAR" "$DOWNLOAD_URL"; then
+    # 如果下载失败，尝试本地安装（仅当直接执行脚本文件时有效）
+    SCRIPT_PATH="${BASH_SOURCE[0]:-}"
+    if [[ -n "$SCRIPT_PATH" && -f "$SCRIPT_PATH" ]]; then
+        SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
         if [[ -f "$SCRIPT_DIR/secgate" ]]; then
             info "使用本地文件安装..."
             mkdir -p "$INSTALL_DIR"
