@@ -43,13 +43,9 @@ GATEWAY_DIR = os.path.dirname(__file__)
 # 不允许保护的系统端口
 EXCLUDED_PORTS = {22, 53, 5002}
 
-# 默认受保护端口（首次迁移用）
+# 默认受保护端口（仅保护 Dashboard，其余由用户通过管理页面添加）
 DEFAULT_PROTECTED_PORTS = {
     "5000": {"nginx_port": 25000, "type": "standard", "comment": "安全监控看板"},
-    "5001": {"nginx_port": 25001, "type": "standard", "comment": "Web 应用"},
-    "5711": {"nginx_port": 25711, "type": "standard", "comment": "Python 服务"},
-    "8000": {"nginx_port": 28000, "type": "chainlit", "comment": "Chainlit App"},
-    "8501": {"nginx_port": 28501, "type": "chainlit", "comment": "Chainlit Agent"},
 }
 
 serializer = URLSafeTimedSerializer(SECRET_KEY)
@@ -73,14 +69,7 @@ def load_config():
                 "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
         },
-        "ip_whitelist": [
-            "42.120.75.0/24",
-            "39.144.124.0/24",
-            "115.205.149.0/24",
-            "117.136.108.0/24",
-            "183.156.247.0/24",
-            "183.218.82.0/24",
-        ],
+        "ip_whitelist": [],
         "protected_ports": DEFAULT_PROTECTED_PORTS.copy(),
     }
     save_config(cfg)
