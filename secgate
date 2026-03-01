@@ -266,31 +266,14 @@ def cmd_update():
 
 
 def cmd_set_apikey():
-    """设置 AI 助手的 Anthropic API Key"""
-    if len(sys.argv) < 3:
-        print("用法: secgate set-apikey <ANTHROPIC_API_KEY>")
-        print()
-        print("设置后重启服务生效: secgate restart")
-        # 显示当前状态
-        from shared import load_credentials
-        creds = load_credentials()
-        key = creds.get("anthropic_api_key", "")
-        if key:
-            print(f"\n当前 API Key: {key[:12]}...{key[-4:]}")
-        else:
-            print("\n当前未设置 API Key")
-        return
-
-    api_key = sys.argv[2].strip()
-    if not api_key.startswith("sk-ant-"):
-        print("警告: API Key 格式可能不正确（通常以 sk-ant- 开头）")
-
-    from shared import load_credentials, save_credentials
-    creds = load_credentials()
-    creds["anthropic_api_key"] = api_key
-    save_credentials(creds)
-    print(f"API Key 已保存: {api_key[:12]}...{api_key[-4:]}")
-    print("重启服务生效: secgate restart")
+    """提示用户去 Dashboard 设置 API Key"""
+    ip = get_public_ip()
+    print()
+    print("  API Key 已改为通过 Dashboard 页面配置。")
+    print()
+    print(f"  请访问: http://{ip}:5000 > AI 安全 > 助手设置")
+    print("  填入 Anthropic API Key（sk-ant-...）并保存即可。")
+    print()
 
 
 def cmd_setup():
@@ -457,7 +440,7 @@ SecGate - 安全网关一体化管理工具
     restart        重启所有服务
     status         查看运行状态
     creds          查看登录凭证
-    set-apikey     设置 AI 助手的 Anthropic API Key
+    set-apikey     配置 AI 助手（提示去 Dashboard 设置）
     version        查看版本号
     update         更新到最新版本
 
@@ -466,8 +449,8 @@ SecGate - 安全网关一体化管理工具
     cd /opt/secgate && sudo ./secgate setup
 
 激活 AI 助手:
-    secgate set-apikey sk-ant-xxx
-    secgate restart
+    在 Dashboard > AI 安全 > 助手设置 中配置 Anthropic API Key
+    或命令行: secgate set-apikey
 
 日常管理:
     secgate start     # 启动

@@ -2055,6 +2055,84 @@ def api_notifications_count():
     return jsonify({"unread_count": get_unread_count()})
 
 
+# ============ AI 助手 API Key 设置 ============
+
+@app.route("/api/llm-settings", methods=["GET"])
+@requires_auth
+def api_llm_settings_get():
+    """读取 Anthropic API Key（脱敏返回）"""
+    from shared import load_credentials
+    creds = load_credentials()
+    api_key = creds.get("anthropic_api_key", "")
+    masked_key = ""
+    if api_key:
+        if len(api_key) > 8:
+            masked_key = api_key[:4] + "*" * (len(api_key) - 8) + api_key[-4:]
+        else:
+            masked_key = "****"
+    return jsonify({
+        "api_key": masked_key,
+        "configured": bool(api_key),
+    })
+
+
+@app.route("/api/llm-settings", methods=["POST"])
+@requires_auth
+def api_llm_settings_post():
+    """保存 Anthropic API Key 到 .credentials.json"""
+    from shared import load_credentials, save_credentials
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "请求体不能为空"}), 400
+
+    api_key = (data.get("api_key") or "").strip()
+    if not api_key:
+        return jsonify({"error": "API Key 不能为空"}), 400
+
+    creds = load_credentials()
+    creds["anthropic_api_key"] = api_key
+    save_credentials(creds)
+    return jsonify({"ok": True, "message": "API Key 已保存，AI 助手将在下次对话时自动生效。"})
+
+
+@app.route("/api/llm-settings/test", methods=["GET"])
+@requires_auth
+def api_llm_settings_test():
+    """测试 API Key 是否有效（用 requests 调 Anthropic API）"""
+    import requests as http_req
+    from shared import load_credentials
+    creds = load_credentials()
+    api_key = creds.get("anthropic_api_key", "")
+
+    if not api_key:
+        return jsonify({"ok": False, "error": "未配置 API Key，请先保存"})
+
+    try:
+        resp = http_req.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 16,
+                "messages": [{"role": "user", "content": "Hi"}],
+            },
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            return jsonify({"ok": True, "message": "API Key 有效，连接成功！"})
+        elif resp.status_code == 401:
+            return jsonify({"ok": False, "error": "API Key 无效，请检查后重新输入"})
+        else:
+            err_text = resp.text[:200]
+            return jsonify({"ok": False, "error": f"HTTP {resp.status_code}: {err_text}"})
+    except http_req.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "连接超时，请检查网络"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"测试失败: {str(e)[:200]}"})
 
 
 # 注册安全扫描 Blueprint

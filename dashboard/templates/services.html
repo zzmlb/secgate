@@ -2871,6 +2871,7 @@
                 <button class="sub-tab-btn active" data-sub="ai-services" onclick="switchSubTab('ai','ai-services')">AI 服务</button>
                 <button class="sub-tab-btn" data-sub="ai-keys" onclick="switchSubTab('ai','ai-keys')">API Key</button>
                 <button class="sub-tab-btn" data-sub="ai-risks" onclick="switchSubTab('ai','ai-risks')">风险评估</button>
+                <button class="sub-tab-btn" data-sub="ai-assistant" onclick="switchSubTab('ai','ai-assistant');loadLlmSettings()">助手设置</button>
             </div>
 
             <!-- AI 服务发现 -->
@@ -2947,6 +2948,27 @@
                 </div>
                 <div id="aiRisksList">
                     <div style="text-align:center;color:var(--text-secondary);padding:30px;">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 助手设置 -->
+            <div id="stab-ai-ai-assistant" class="sub-tab-content">
+                <div class="section-title">AI 助手 API Key</div>
+                <p style="color:var(--text-secondary);font-size:13px;margin:0 0 18px;">配置 Anthropic API Key 以激活 AI 安全助手（基于 Claude Code CLI）。获取密钥：<a href="https://console.anthropic.com/" target="_blank" style="color:var(--accent-cyan);">Anthropic Console</a></p>
+                <div class="panel full-width" style="max-width:600px;">
+                    <div class="panel-body" style="padding:20px;">
+                        <div style="margin-bottom:20px;">
+                            <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text-primary);">Anthropic API Key</label>
+                            <input type="password" id="llmApiKey" placeholder="sk-ant-..."
+                                   style="width:100%;padding:9px 12px;border:1px solid var(--border-color);border-radius:6px;background:var(--card-bg);color:var(--text-primary);font-size:13px;box-sizing:border-box;">
+                            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">保存后 AI 助手将在下次对话时自动生效，无需重启服务</div>
+                        </div>
+                        <div style="display:flex;gap:10px;">
+                            <button onclick="saveLlmSettings()" style="padding:9px 24px;border:none;border-radius:6px;background:var(--accent-cyan);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">保存</button>
+                            <button onclick="testLlmConnection()" style="padding:9px 24px;border:none;border-radius:6px;background:transparent;border:1px solid var(--accent-cyan);color:var(--accent-cyan);font-size:13px;font-weight:600;cursor:pointer;">测试连接</button>
+                        </div>
+                        <div id="llmSettingsMsg" style="margin-top:12px;font-size:13px;display:none;"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -3608,6 +3630,48 @@ function filterAIRisks(filter, btn) {
         html += '</div>';
     });
     container.innerHTML = html;
+}
+
+/* ===== LLM 助手设置 ===== */
+function _llmMsg(text, ok) {
+    var el = document.getElementById('llmSettingsMsg');
+    el.style.display = 'block';
+    el.style.color = ok ? 'var(--accent-green)' : 'var(--accent-red)';
+    el.textContent = text;
+}
+function loadLlmSettings() {
+    fetch('/api/llm-settings', {headers:{'X-Requested-With':'XMLHttpRequest'}})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            document.getElementById('llmApiKey').value = '';
+            document.getElementById('llmApiKey').placeholder = d.api_key || 'sk-ant-...';
+            document.getElementById('llmSettingsMsg').style.display = 'none';
+        })
+        .catch(function(e){ _llmMsg('加载配置失败: ' + e, false); });
+}
+function saveLlmSettings() {
+    var key = document.getElementById('llmApiKey').value.trim();
+    if (!key) { _llmMsg('请输入 API Key', false); return; }
+    fetch('/api/llm-settings', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest'},
+        body: JSON.stringify({api_key: key})
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+        if (d.ok) { _llmMsg(d.message || '保存成功', true); loadLlmSettings(); }
+        else _llmMsg(d.error || '保存失败', false);
+    })
+    .catch(function(e){ _llmMsg('请求失败: ' + e, false); });
+}
+function testLlmConnection() {
+    _llmMsg('正在测试连接...', true);
+    fetch('/api/llm-settings/test', {headers:{'X-Requested-With':'XMLHttpRequest'}})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            _llmMsg(d.ok ? (d.message || '连接成功') : (d.error || '连接失败'), d.ok);
+        })
+        .catch(function(e){ _llmMsg('测试请求失败: ' + e, false); });
 }
 
 function loadDashboardData() {
@@ -5549,7 +5613,7 @@ if (typeof localStorage !== 'undefined' && localStorage.getItem('notifHelpDismis
 <div class="ai-chat-panel" id="aiChatPanel">
     <div class="ai-chat-header">
         <div class="ai-chat-header-title">
-            AI 安全助手 <span>Claude Code</span>
+            AI 安全助手 <span>SecGate AI</span>
         </div>
         <div class="ai-chat-header-actions">
             <a id="aiChatNewwin" href="#" target="_blank" title="新窗口打开">&#8599; 新窗口</a>

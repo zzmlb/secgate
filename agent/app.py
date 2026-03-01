@@ -16,7 +16,7 @@ import chainlit as cl
 PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_DIR)
 
-from shared import get_or_create_credential
+from shared import get_or_create_credential, load_credentials
 
 # Claude Code CLI 路径
 CLAUDE_CMD = "claude"
@@ -40,11 +40,24 @@ TOOL_NAMES = {
 }
 
 
+def _get_api_key() -> str:
+    """从环境变量或 .credentials.json 获取 API Key（动态读取，无需重启）"""
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not key:
+        creds = load_credentials()
+        key = creds.get("anthropic_api_key", "")
+    return key
+
+
 def _build_env() -> dict:
     """构建子进程环境变量"""
     env = os.environ.copy()
     env["DISABLE_CLAUDE_TELEMETRY"] = "1"
     env.pop("CLAUDECODE", None)
+    # 动态读取 API Key，Dashboard 设置后无需重启
+    api_key = _get_api_key()
+    if api_key:
+        env["ANTHROPIC_API_KEY"] = api_key
     return env
 
 
@@ -194,7 +207,7 @@ def _check_claude_cli() -> bool:
 async def on_start():
     """对话开始时的欢迎信息，检测 Claude CLI 是否可用"""
     has_cli = _check_claude_cli()
-    has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    has_key = bool(_get_api_key())
 
     if not has_cli or not has_key:
         missing = []
@@ -211,7 +224,8 @@ async def on_start():
         if not has_key:
             missing.append(
                 "**设置 API Key：**\n"
-                "请直接在下方对话框中粘贴你的 Anthropic API Key（以 `sk-ant-` 开头），我会自动保存并激活。\n\n"
+                "请前往 **Dashboard > AI 安全 > 助手设置** 页面配置 Anthropic API Key，\n"
+                "或直接在下方对话框中粘贴（以 `sk-ant-` 开头）。\n\n"
                 "API Key 获取：访问 [Anthropic Console](https://console.anthropic.com/) 创建密钥。"
             )
 
@@ -272,9 +286,9 @@ async def on_message(message: cl.Message):
         ).send()
         return
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if not _get_api_key():
         await cl.Message(
-            content="请先设置 API Key：直接在对话框中粘贴你的 Anthropic API Key（以 `sk-ant-` 开头）。"
+            content="请先设置 API Key：前往 Dashboard > AI 安全 > 助手设置 配置，或直接在对话框中粘贴（以 `sk-ant-` 开头）。"
         ).send()
         return
 
