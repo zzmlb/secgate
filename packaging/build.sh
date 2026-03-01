@@ -32,8 +32,11 @@ rsync -a \
     --exclude='*-discussion' \
     --exclude='.pids.json' \
     --exclude='.credentials.json' \
+    --exclude='gateway/config.json' \
     --exclude='dashboard/data' \
     --exclude='scanner/data' \
+    --exclude='.claude' \
+    --exclude='.chainlit' \
     --exclude='.files' \
     --exclude='src' \
     --exclude='secgate_pkg' \

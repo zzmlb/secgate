@@ -65,7 +65,9 @@ if ! curl -fsSL -o "$TMP_TAR" "$DOWNLOAD_URL"; then
             mkdir -p "$INSTALL_DIR"
             rsync -a --exclude='__pycache__' --exclude='.git' --exclude='dist' --exclude='build' \
                   --exclude='*.egg-info' --exclude='*-discussion' --exclude='.pids.json' \
-                  --exclude='.credentials.json' --exclude='dashboard/data' --exclude='scanner/data' \
+                  --exclude='.credentials.json' --exclude='gateway/config.json' \
+                  --exclude='dashboard/data' --exclude='scanner/data' \
+                  --exclude='.claude' --exclude='.chainlit' \
                   "$SCRIPT_DIR/" "$INSTALL_DIR/"
         else
             error "下载失败且无法使用本地文件"

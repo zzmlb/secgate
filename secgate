@@ -15,6 +15,7 @@
 import os
 import sys
 import json
+import shutil
 import signal
 import subprocess
 import time
@@ -103,39 +104,42 @@ def cmd_start():
         pids[name] = proc.pid
         print(f"  [启动] {name} (PID: {proc.pid}, 日志: {log})")
 
-    # 启动 Chainlit AI 助手
+    # 启动 Chainlit AI 助手（可选，未安装 chainlit 则跳过）
     if "agent" not in pids or not is_running(pids.get("agent")):
-        agent_port = 8502
-        agent_dir = os.path.join(PROJECT_DIR, "agent")
-        agent_log = "/tmp/secgate-agent.log"
-        # 清理残留进程
-        r = subprocess.run(["lsof", "-ti", f":{agent_port}"], capture_output=True, text=True)
-        if r.stdout.strip():
-            for old_pid in r.stdout.strip().split("\n"):
-                try:
-                    os.kill(int(old_pid), signal.SIGKILL)
-                except Exception:
-                    pass
-            time.sleep(1)
-        env = os.environ.copy()
-        env["DISABLE_CLAUDE_TELEMETRY"] = "1"
-        env.pop("CLAUDECODE", None)
-        # Chainlit 密码认证需要 JWT secret
-        from shared import get_or_create_credential
-        import secrets as _sec
-        env["CHAINLIT_AUTH_SECRET"] = get_or_create_credential(
-            "chainlit_auth_secret", lambda: _sec.token_hex(32)
-        )
-        proc = subprocess.Popen(
-            ["chainlit", "run", "app.py", "--host", "0.0.0.0", "--port", str(agent_port)],
-            stdout=open(agent_log, "a"),
-            stderr=subprocess.STDOUT,
-            cwd=agent_dir,
-            start_new_session=True,
-            env=env,
-        )
-        pids["agent"] = proc.pid
-        print(f"  [启动] agent (PID: {proc.pid}, 端口: {agent_port}, 日志: {agent_log})")
+        if shutil.which("chainlit"):
+            agent_port = 8502
+            agent_dir = os.path.join(PROJECT_DIR, "agent")
+            agent_log = "/tmp/secgate-agent.log"
+            # 清理残留进程
+            r = subprocess.run(["lsof", "-ti", f":{agent_port}"], capture_output=True, text=True)
+            if r.stdout.strip():
+                for old_pid in r.stdout.strip().split("\n"):
+                    try:
+                        os.kill(int(old_pid), signal.SIGKILL)
+                    except Exception:
+                        pass
+                time.sleep(1)
+            env = os.environ.copy()
+            env["DISABLE_CLAUDE_TELEMETRY"] = "1"
+            env.pop("CLAUDECODE", None)
+            # Chainlit 密码认证需要 JWT secret
+            from shared import get_or_create_credential
+            import secrets as _sec
+            env["CHAINLIT_AUTH_SECRET"] = get_or_create_credential(
+                "chainlit_auth_secret", lambda: _sec.token_hex(32)
+            )
+            proc = subprocess.Popen(
+                ["chainlit", "run", "app.py", "--host", "0.0.0.0", "--port", str(agent_port)],
+                stdout=open(agent_log, "a"),
+                stderr=subprocess.STDOUT,
+                cwd=agent_dir,
+                start_new_session=True,
+                env=env,
+            )
+            pids["agent"] = proc.pid
+            print(f"  [启动] agent (PID: {proc.pid}, 端口: {agent_port}, 日志: {agent_log})")
+        else:
+            print("  [跳过] agent (未安装 chainlit，AI 助手为可选功能)")
 
     save_pids(pids)
     time.sleep(2)
