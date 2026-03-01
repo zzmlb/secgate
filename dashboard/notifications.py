@@ -130,7 +130,7 @@ def create_notification(alert_type, level, title, message, dedup_key=None, conte
 
 
 def get_notifications(status=None, limit=50, offset=0):
-    """查询通知列表，按 level 优先级 + 时间倒序"""
+    """查询通知列表，按时间倒序（最新的在最上面）"""
     conn = _get_conn()
     query = """SELECT * FROM notifications WHERE 1=1"""
     params = []
@@ -139,10 +139,7 @@ def get_notifications(status=None, limit=50, offset=0):
         query += " AND status = ?"
         params.append(status)
 
-    query += """ ORDER BY
-        CASE level WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 WHEN 'info' THEN 3 ELSE 4 END,
-        created_at DESC
-        LIMIT ? OFFSET ?"""
+    query += """ ORDER BY created_at DESC LIMIT ? OFFSET ?"""
     params.extend([limit, offset])
 
     rows = conn.execute(query, params).fetchall()

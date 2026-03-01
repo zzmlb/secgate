@@ -1,57 +1,142 @@
 # SecGate - Linux 服务器安全网关管理平台
 
-## 功能
-- 安全监控看板（SSH 攻击、防火墙、服务状态、ECharts 可视化）
-- 三层认证网关（IP 白名单 + Token + Cookie）
-- 安全漏洞扫描（SCA、密钥泄露、Web 漏洞、异常连接）
-- 站内安全通知（8 条自动检测规则）
-- AI 安全助手（Claude 集成，可选）
+一站式 Linux 服务器安全管理方案，开箱即用。通过 `secgate setup` 一条命令完成部署，提供安全监控、访问控制、漏洞扫描、告警通知和 AI 辅助分析。
+
+## 功能概览
+
+### 安全监控看板
+- SSH 攻击分析 — 失败登录统计、攻击 IP 地理位置追踪、高频攻击排行
+- 防火墙拦截统计 — iptables 日志解析、拦截事件可视化
+- 服务状态监控 — 端口存活检测、CPU/内存/磁盘使用率
+- Fail2Ban 状态 — 封禁 IP 列表、jail 运行状态
+- ECharts 数据可视化 — 支持 7/30/90 天趋势图
+
+### 三层认证网关
+- 第一层：IP 白名单（CIDR 网段支持）
+- 第二层：Token 签名认证（URL 安全 Token）
+- 第三层：Cookie 会话（7 天有效期）
+- Nginx auth_request 集成，保护任意端口的 Web 服务
+
+### 安全漏洞扫描（5 个扫描器）
+- **SCA 依赖漏洞扫描** — 支持 Python/Node.js/Go/Java，对接 OSV 漏洞库
+- **敏感信息检测** — 25+ 正则规则，覆盖 AWS Key、GitHub Token、RSA 私钥等
+- **输入验证测试** — SQL 注入、XSS、路径穿越、SSRF 模糊测试
+- **对外连接检测** — 监听端口枚举，数据库未授权访问检测
+- **Web 安全检测** — SSL/TLS、安全头、Cookie 属性、敏感路径探测、CORS 检测
+
+### 安全告警通知（8 条自动检测规则）
+- SSH 密码登录未关闭
+- 新端口未受网关保护
+- 新 IP SSH 登录成功
+- Fail2Ban 封禁新 IP
+- SSH 暴力破解突增（1 小时 > 100 次）
+- AI 服务无认证暴露
+- 服务异常停止
+- 磁盘空间不足（> 90%）
+
+### AI 安全助手（可选）
+- Claude 集成，对话式安全分析
+- 只读权限，不会修改系统配置
+- Chainlit Web UI，密码认证保护
 
 ## 系统要求
+
 - Ubuntu 20.04+ / Debian 11+（需要 root 权限）
 - Python 3.9+
 
-## 安装方式
+## 安装部署
 
 ### 方式一：Git Clone（推荐）
+
 ```bash
-git clone https://github.com/user/secgate.git /opt/secgate
+git clone https://github.com/zzmlb/secgate.git /opt/secgate
 cd /opt/secgate && sudo ./secgate setup
 ```
 
 ### 方式二：一键安装
+
 ```bash
-curl -fsSL https://github.com/user/secgate/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/zzmlb/secgate/releases/latest/download/install.sh | sudo bash
 ```
 
 ### 方式三：pip 安装
+
 ```bash
 pip install secgate
 sudo secgate setup
 ```
 
-## 日常管理
+`secgate setup` 会自动完成以下配置：
+1. 安装系统依赖（Nginx、iptables、UFW、Fail2Ban）
+2. 安装 Python 依赖
+3. 生成安全凭证（随机密码、Token）
+4. 配置 Nginx 认证网关
+5. 配置 iptables 防火墙规则
+6. 配置 UFW 并放行必要端口
+7. 安装 Gunicorn 生产级服务器
+8. 配置 systemd 开机自启
+9. 启动所有服务
+
+## 使用指南
+
+### 日常管理命令
+
 ```bash
 secgate start      # 启动所有服务
 secgate stop       # 停止所有服务
 secgate restart    # 重启所有服务
 secgate status     # 查看运行状态
-secgate creds      # 查看登录凭证
+secgate creds      # 查看登录凭证（用户名 + 密码）
 secgate version    # 查看版本号
 secgate update     # 更新到最新版本
 ```
+
+### 访问看板
+
+部署完成后访问 `http://服务器IP:5000`，使用 `secgate creds` 获取的用户名密码登录。
+
+### 网关配置
+
+编辑 `gateway/config.json` 管理 Token、IP 白名单和受保护端口：
+
+```json
+{
+  "tokens": { "<64位hex>": { "name": "default" } },
+  "ip_whitelist": ["你的IP/32"],
+  "protected_ports": {
+    "5000": { "nginx_port": 25000, "type": "standard", "comment": "安全看板" }
+  }
+}
+```
+
+参考 `gateway/config.example.json` 中的示例。
+
+### 漏洞扫描
+
+在看板页面进入「安全扫描」模块，支持：
+- 自动探测本机监听端口，推荐适用的扫描器
+- 手动触发扫描任务，查看发现的漏洞
+- 设置定时扫描计划
+
+## 使用建议
+
+1. **首次部署后**：运行 `secgate creds` 记录密码，然后在看板中检查告警通知
+2. **配置 IP 白名单**：编辑 `gateway/config.json`，添加你的办公网络 IP 段
+3. **关闭 SSH 密码登录**：配置密钥登录后在 `/etc/ssh/sshd_config` 设置 `PasswordAuthentication no`
+4. **定期扫描**：建议每周运行一次全量扫描，关注 SCA 依赖漏洞和敏感信息泄露
+5. **关注告警**：看板右上角通知铃铛会显示未读告警数，critical 级别需立即处理
+6. **备份配置**：`.credentials.json` 和 `gateway/config.json` 是重要配置，升级前会自动备份
 
 ## 升级
 
 ### Git Clone 方式
 ```bash
-cd /opt/secgate && sudo ./secgate stop
-git pull && sudo ./secgate start
+cd /opt/secgate && sudo ./secgate update
 ```
 
 ### 一键安装方式
 ```bash
-curl -fsSL https://github.com/user/secgate/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/zzmlb/secgate/releases/latest/download/install.sh | sudo bash
 ```
 
 ### pip 安装方式
@@ -60,15 +145,42 @@ pip install --upgrade secgate
 ```
 
 ## 卸载
+
 ```bash
 sudo bash /opt/secgate/packaging/uninstall.sh
 ```
 
 ## 架构
+
+```
+用户请求 → Nginx (反向代理 + auth_request) → Gateway (:5002) 认证
+                                               ↓ 通过
+                                    Dashboard (:5000) 安全看板
+                                    Agent     (:8502) AI 助手
+```
+
 SecGate 包含三个核心服务：
-- Gateway (端口 5002) - Nginx 认证网关
-- Dashboard (端口 5000) - 安全监控看板
-- Agent (端口 8502) - AI 安全助手 (Chainlit)
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| Gateway | 5002 | Nginx 认证网关，处理 IP 白名单 / Token / Cookie 三层认证 |
+| Dashboard | 5000 | 安全监控看板，集成扫描器和告警引擎 |
+| Agent | 8502 | AI 安全助手（Chainlit + Claude），可选 |
+
+## 目录结构
+
+```
+secgate/
+├── secgate              # CLI 管理工具
+├── shared.py            # 共享模块（IP 检测、凭证管理）
+├── gateway/             # 认证网关服务
+├── dashboard/           # 安全监控看板
+│   └── notifications.py # 告警引擎（8 条自动检测规则）
+├── scanner/             # 漏洞扫描模块（5 个扫描器）
+├── agent/               # AI 安全助手
+└── packaging/           # 打包和部署脚本
+```
 
 ## 许可证
+
 MIT License
