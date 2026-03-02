@@ -4516,12 +4516,18 @@ function showPortStatus(msg, color) {
     setTimeout(() => { bar.style.display = 'none'; }, 5000);
 }
 
+function isWebSocketService(p) {
+    var name = ((p.process || '') + ' ' + (p.svc_name || '')).toLowerCase();
+    return name.indexOf('chainlit') !== -1 || name.indexOf('streamlit') !== -1 || name.indexOf('gradio') !== -1;
+}
+
 function protectPort(port, name) {
     showPortStatus('正在添加端口保护...', 'blue');
+    var portData = _unprotectedPortsCache.find(function(p) { return p.port === port; });
     fetch(GW_API + '/api/gateway/ports', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({port: port, comment: name, is_chainlit: false}),
+        body: JSON.stringify({port: port, comment: name, is_chainlit: portData ? isWebSocketService(portData) : false}),
     })
     .then(r => r.json().then(d => ({status: r.status, data: d})))
     .then(({status, data}) => {
@@ -4547,7 +4553,7 @@ function protectAllPorts() {
     const ports = _unprotectedPortsCache.map(p => ({
         port: p.port,
         comment: p.svc_name || '',
-        is_chainlit: false,
+        is_chainlit: isWebSocketService(p),
     }));
 
     fetch(GW_API + '/api/gateway/ports/batch', {
