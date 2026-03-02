@@ -2387,6 +2387,24 @@
                         </div>
                     </div>
                 </div>
+                <div style="margin:-16px 0 20px;font-size:0;">
+                    <button onclick="var p=this.nextElementSibling;var s=p.style.display==='none';p.style.display=s?'block':'none';this.querySelector('span').textContent=s?'▲':'▼'" style="background:transparent;border:none;color:var(--text-secondary);font-size:11px;cursor:pointer;padding:2px 0;opacity:0.7;">评分规则说明 <span>▼</span></button>
+                    <div style="display:none;font-size:12px;color:var(--text-secondary);line-height:1.8;background:rgba(79,195,247,0.04);border:1px solid var(--border-color);border-radius:8px;padding:12px 16px;margin-top:6px;">
+                        <div style="margin-bottom:6px;color:var(--text-primary);font-weight:600;">威胁指数 0-100，由四个维度加权计算：</div>
+                        <div><span style="color:var(--accent-red);">&#9632;</span> <b>SSH 暴力破解（30%）</b>— auth.log 中 SSH 登录失败次数，对数缩放，超过 1000 次趋近满分</div>
+                        <div><span style="color:var(--accent-yellow);">&#9632;</span> <b>端口扫描（25%）</b>— UFW 防火墙拦截的非法连接数，对数缩放，超过 10000 次趋近满分</div>
+                        <div><span style="color:var(--accent-purple);">&#9632;</span> <b>Web 攻击（25%）</b>— 24h Nginx 日志中检测到的异常请求（SQL 注入、XSS、路径遍历、命令注入、SSRF、漏洞扫描探针、恶意 UA），超过 200 次趋近满分</div>
+                        <div><span style="color:var(--accent-green);">&#9632;</span> <b>防御效果（20%）</b>— Fail2Ban 封禁 IP 数 / 攻击 IP 总数，封禁率越高威胁越低（反向计入总分）</div>
+                        <div style="margin-top:6px;border-top:1px solid var(--border-color);padding-top:6px;">
+                            <b>等级划分：</b>
+                            <span style="color:var(--accent-green);">0-20 安全</span> ·
+                            <span style="color:var(--accent-blue);">21-40 注意</span> ·
+                            <span style="color:var(--accent-yellow);">41-60 警告</span> ·
+                            <span style="color:#ff9800;">61-80 严峻</span> ·
+                            <span style="color:var(--accent-red);">81-100 危险</span>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="stats-row-5">
                     <div class="stat-card">
@@ -3567,8 +3585,9 @@ function renderFail2Ban(f2b) {
         html += '<div style="margin-top:10px;font-size:12px;color:var(--text-secondary);margin-bottom:6px;">当前封禁列表（' + total + ' 个）</div>';
         html += '<div id="f2bBanCards" style="display:flex;flex-wrap:wrap;gap:8px;">';
         f2b.ban_details.forEach(function(d, i) {
-            var hidden = i >= showCount ? ' style="display:none;" data-f2b-extra' : '';
-            html += '<div' + hidden + ' class="f2b-ban-card" style="background:rgba(239,83,80,0.08);border:1px solid rgba(239,83,80,0.25);border-radius:10px;padding:10px 14px;min-width:180px;">';
+            var extraAttr = i >= showCount ? ' data-f2b-extra' : '';
+            var hideStyle = i >= showCount ? 'display:none;' : '';
+            html += '<div' + extraAttr + ' class="f2b-ban-card" style="' + hideStyle + 'background:rgba(239,83,80,0.08);border:1px solid rgba(239,83,80,0.25);border-radius:10px;padding:10px 14px;min-width:180px;">';
             html += '<div style="font-family:\'Courier New\',monospace;font-weight:700;color:var(--accent-red);font-size:14px;margin-bottom:4px;">' + escHtml(d.ip) + '</div>';
             html += '<div style="font-size:11px;color:var(--text-secondary);">Jail: <span style="color:var(--accent-cyan)">' + escHtml(d.jail) + '</span></div>';
             html += '<div style="font-size:11px;color:var(--text-secondary);">封禁: ' + escHtml(d.time) + '</div>';
