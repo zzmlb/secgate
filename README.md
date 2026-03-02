@@ -1,5 +1,7 @@
 # SecGate - Linux Server Security Gateway
 
+**中文** | [English](README_EN.md)
+
 > **One command to deploy, zero config to protect.** The only open-source tool that provides gateway authentication + attack monitoring + vulnerability scanning + AI assistant in ~120MB memory.
 
 一条命令部署，零配置即用。唯一在 120MB 内存内提供网关认证 + 攻击监控 + 漏洞扫描 + AI 助手的开源一体化安全工具。
