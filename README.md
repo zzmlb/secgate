@@ -1,6 +1,59 @@
-# SecGate - Linux 服务器安全网关管理平台
+# SecGate - Linux Server Security Gateway
 
-一站式 Linux 服务器安全管理方案，零配置开箱即用。一条命令完成部署，全部通过 Web 页面管理，无需手动编辑任何配置文件。
+> **One command to deploy, zero config to protect.** The only open-source tool that provides gateway authentication + attack monitoring + vulnerability scanning + AI assistant in ~120MB memory.
+
+一条命令部署，零配置即用。唯一在 120MB 内存内提供网关认证 + 攻击监控 + 漏洞扫描 + AI 助手的开源一体化安全工具。
+
+```bash
+curl -fsSL https://github.com/zzmlb/secgate/releases/latest/download/install.sh | sudo bash
+```
+
+## Why SecGate / 为什么选择 SecGate
+
+**填补了 Fail2Ban（太简单）和 Wazuh（太重）之间的空白。**
+
+| | Fail2Ban | CrowdSec | **SecGate** | 1Panel/宝塔 | Wazuh |
+|---|---------|----------|-------------|------------|-------|
+| 内存占用 | <50 MB | ~100 MB | **~120 MB** | 500 MB-2 GB | 4 GB+ |
+| 网关认证 | - | - | **任意 TCP 端口** | - | - |
+| Web 看板 | - | 云端 Console | **本地全功能** | 有 | 有 |
+| 漏洞扫描 | - | - | **内置 5 个** | - / 付费 | 有 |
+| 攻击态势评分 | - | 有 | **四维度评分** | - | 有 |
+| AI 安全助手 | - | - | **内置** | - | - |
+| 告警引擎 | - | 有 | **8 条自动规则** | - | 有 |
+| 部署方式 | apt install | 需装 Bouncer | **1 条命令全自动** | 一键脚本 | 多组件调优 |
+| 适合 1 核 1G | Yes | 勉强 | **Yes** | No | No |
+| 开源 / 价格 | MIT / 免费 | MIT / 核心免费 | **MIT / 完全免费** | GPLv3 / 专业版付费 | Apache / 免费 |
+
+### Core Strengths / 核心优势
+
+| 优势 | 说明 |
+|------|------|
+| **网关认证（独有能力）** | iptables 重定向 + Nginx auth_request，给**任意 TCP 端口**加认证层，后端服务零代码修改。调研 18 个竞品（7 个面板 + 7 个安全工具 + 4 个云方案）**无一具备** |
+| **极致轻量** | 安装包 170 KB，运行内存 ~120 MB，1 核 1G VPS 流畅运行 |
+| **一键全自动** | 1 条命令完成 Nginx / UFW / Fail2Ban / iptables / systemd 等 10 步配置 |
+| **攻击态势评分** | SSH 暴力破解 + 端口扫描 + Web 异常请求 + 防御效果，四维度对数加权 0-100 评分，一眼判断安全状况 |
+| **AI 安全模块** | 15+ AI 提供商密钥检测、14 种 AI 服务自动发现、对话式安全排查助手，开源工具中独有 |
+| **纯 IP 可用** | 不需要域名，Cloudflare / Pangolin 等方案都要域名，SecGate 纯 IP 直接保护 |
+| **攻击面最小** | 5000 行 Python + 4000 行前端，远小于运维面板（宝塔/CyberPanel 多次高危 RCE 和勒索软件利用） |
+
+### Best For / 适用场景
+
+- **个人开发者 VPS** — 不懂安全配置，装上就有基本防护
+- **多服务部署** — 数据库 / API / 管理后台，统一网关认证保护所有端口
+- **AI 应用部署** — Gradio / Streamlit / Chainlit 默认无认证，一键加保护
+- **临时环境快速加固** — 比赛 / 演示 / POC，几分钟装好立刻有防护
+
+### Recommended Stack / 推荐搭配
+
+| 方案 | 说明 |
+|------|------|
+| **SecGate 单独** | 服务器层全覆盖，最轻量 |
+| **SecGate + Cloudflare Free** | SecGate 管服务器层，Cloudflare 管 HTTP 层（WAF / DDoS），互补无重叠，全免费 |
+| **SecGate + CrowdSec** | 本地防护 + 社区威胁情报，~220 MB |
+| **SecGate + 1Panel** | 安全（SecGate）+ 运维（1Panel），职责分离 |
+
+---
 
 ## 系统要求
 
