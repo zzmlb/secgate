@@ -57,6 +57,20 @@ curl -fsSL https://github.com/zzmlb/secgate/releases/latest/download/install.sh 
 
 ---
 
+## 功能截图
+
+| 安全看板 — 攻击态势总览 | 服务管理 — 端口认证网关 |
+|:---:|:---:|
+| ![安全看板](docs/screenshots/dashboard-overview.png) | ![服务管理](docs/screenshots/service-management.png) |
+
+| 网关认证 — Token & IP 白名单 | 安全扫描 — 漏洞检测 |
+|:---:|:---:|
+| ![网关认证](docs/screenshots/gateway-auth.png) | ![安全扫描](docs/screenshots/security-scan.png) |
+
+| AI 安全 — 服务发现 & API Key 检测 |
+|:---:|
+| ![AI 安全](docs/screenshots/ai-security.png) |
+
 ## 系统要求
 
 - Ubuntu 20.04+ / Debian 11+

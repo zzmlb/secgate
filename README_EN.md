@@ -55,6 +55,20 @@ curl -fsSL https://github.com/zzmlb/secgate/releases/latest/download/install.sh 
 
 ---
 
+## Screenshots
+
+| Security Dashboard — Attack Overview | Service Management — Port Gateway |
+|:---:|:---:|
+| ![Dashboard](docs/screenshots/dashboard-overview.png) | ![Services](docs/screenshots/service-management.png) |
+
+| Gateway Auth — Token & IP Whitelist | Security Scan — Vulnerability Detection |
+|:---:|:---:|
+| ![Gateway](docs/screenshots/gateway-auth.png) | ![Scan](docs/screenshots/security-scan.png) |
+
+| AI Security — Service Discovery & API Key Detection |
+|:---:|
+| ![AI Security](docs/screenshots/ai-security.png) |
+
 ## Requirements
 
 - Ubuntu 20.04+ / Debian 11+
