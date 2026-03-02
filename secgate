@@ -373,6 +373,45 @@ def cmd_setup():
     allowed = ", ".join(sorted(ufw_ports.keys(), key=int))
     print(f"  UFW 已启用，放行端口: {allowed}")
 
+    # 配置并启动 Fail2Ban
+    print("\n[+] 配置 Fail2Ban...")
+    f2b_jail_local = "/etc/fail2ban/jail.local"
+    if not os.path.exists(f2b_jail_local):
+        with open(f2b_jail_local, "w") as f:
+            f.write("""[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+ignoreip = 127.0.0.1/8 ::1
+backend = systemd
+banaction = iptables-multiport
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+maxretry = 3
+findtime = 600
+bantime = 3600
+""")
+        print("  已创建 /etc/fail2ban/jail.local")
+    else:
+        print("  jail.local 已存在，跳过")
+    # 确保 sshd jail 在 jail.d 中启用
+    f2b_defaults = "/etc/fail2ban/jail.d/defaults-debian.conf"
+    if not os.path.exists(f2b_defaults):
+        os.makedirs("/etc/fail2ban/jail.d", exist_ok=True)
+        with open(f2b_defaults, "w") as f:
+            f.write("[sshd]\nenabled = true\n")
+    subprocess.run(["systemctl", "enable", "fail2ban"], capture_output=True)
+    subprocess.run(["systemctl", "restart", "fail2ban"], capture_output=True)
+    # 验证启动状态
+    r = subprocess.run(["fail2ban-client", "status"], capture_output=True, text=True, timeout=5)
+    if r.returncode == 0:
+        print("  Fail2Ban 已启动")
+    else:
+        print("  [警告] Fail2Ban 启动可能失败，请手动检查: systemctl status fail2ban")
+
     # 安装 gunicorn
     print("\n[+] 安装 Gunicorn...")
     subprocess.run(["pip3", "install", "-q", "gunicorn"], stdout=subprocess.DEVNULL)

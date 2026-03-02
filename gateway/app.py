@@ -9,6 +9,7 @@ import random
 import secrets
 import hashlib
 import subprocess
+import logging
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, parse_qs
 
@@ -20,6 +21,16 @@ from flask import Flask, request, render_template, make_response, redirect, json
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 app = Flask(__name__)
+
+# 登录日志
+_login_logger = logging.getLogger("gateway_login")
+_login_logger.setLevel(logging.INFO)
+try:
+    _login_handler = logging.FileHandler("/var/log/gateway_login.log")
+    _login_handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    _login_logger.addHandler(_login_handler)
+except Exception:
+    pass  # 日志文件无法写入时不影响核心功能
 
 
 @app.after_request
@@ -301,6 +312,7 @@ def do_login():
 
     if verify_token(token):
         _login_attempts.pop(client_ip, None)
+        _login_logger.info("LOGIN_SUCCESS ip=%s next=%s", client_ip, next_url)
         resp = make_response(redirect(next_url))
         resp.set_cookie(
             COOKIE_NAME,
@@ -312,6 +324,7 @@ def do_login():
         )
         return resp
 
+    _login_logger.info("LOGIN_FAILED ip=%s next=%s", client_ip, next_url)
     return render_template("login.html", next_url=next_url, error="Token 无效")
 
 

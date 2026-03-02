@@ -380,9 +380,47 @@ def get_firewall_status():
     return result
 
 
+_RE_F2B_BAN = re.compile(
+    r"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}),\d+\s+fail2ban\.\w+\s+\[\d+\]:\s+\w+\s+\[(\w+)\]\s+(Ban|Unban)\s+(\S+)"
+)
+
+
+def parse_fail2ban_log(days=7):
+    """解析 /var/log/fail2ban.log 中的 Ban/Unban 记录"""
+    records = []
+    cutoff = datetime.now() - timedelta(days=days)
+    log_files = ["/var/log/fail2ban.log", "/var/log/fail2ban.log.1"]
+
+    for log_file in log_files:
+        if not os.path.exists(log_file):
+            continue
+        try:
+            with open(log_file, "r", errors="ignore") as fh:
+                for line in fh:
+                    m = _RE_F2B_BAN.search(line)
+                    if not m:
+                        continue
+                    try:
+                        ts = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        continue
+                    if ts < cutoff:
+                        continue
+                    records.append({
+                        "time": ts.strftime("%Y-%m-%d %H:%M:%S"),
+                        "jail": m.group(2),
+                        "action": m.group(3),
+                        "ip": m.group(4),
+                    })
+        except PermissionError:
+            pass
+
+    return records
+
+
 def get_fail2ban_status():
     """获取fail2ban状态"""
-    status = {"running": False, "jails": [], "banned_ips": 0, "banned_list": [], "jail_details": []}
+    status = {"running": False, "jails": [], "banned_ips": 0, "banned_list": [], "jail_details": [], "ban_details": []}
     try:
         out = subprocess.run(["fail2ban-client", "status"], capture_output=True, text=True, timeout=5)
         if out.returncode == 0:
@@ -409,6 +447,23 @@ def get_fail2ban_status():
                             jail_info["banned_ips"] = ips
                             status["banned_list"].extend(ips)
                     status["jail_details"].append(jail_info)
+
+            # 从日志中提取每个当前被封禁 IP 的详细信息
+            try:
+                log_records = parse_fail2ban_log(days=7)
+                ban_detail_map = {}
+                for rec in log_records:
+                    ip = rec["ip"]
+                    if rec["action"] == "Ban" and ip in status["banned_list"]:
+                        ban_detail_map[ip] = {"ip": ip, "time": rec["time"], "jail": rec["jail"]}
+                # 未在日志中找到的 IP 补充基本信息
+                for ip in status["banned_list"]:
+                    if ip not in ban_detail_map:
+                        ban_detail_map[ip] = {"ip": ip, "time": "未知", "jail": "未知"}
+                status["ban_details"] = list(ban_detail_map.values())
+            except Exception:
+                status["ban_details"] = [{"ip": ip, "time": "未知", "jail": "未知"} for ip in status["banned_list"]]
+
     except FileNotFoundError:
         status["running"] = False
     return status
@@ -572,10 +627,14 @@ def get_firewall_block_stats(days=None):
         fw_country_counter[c] += cnt
     fw_top_countries = fw_country_counter.most_common(15)
 
+    # TOP15 端口覆盖的总拦截数
+    top_ports_total = sum(c for _, c in top_ports)
+
     return {
         "total_blocked": len(blocked),
         "today_blocked": today_blocks,
         "unique_ips": len(ip_counter),
+        "top_ports_total": top_ports_total,
         "top_ports": [
             {"port": p, "count": c, "label": port_labels.get(p, "Unknown")}
             for p, c in top_ports
@@ -607,6 +666,136 @@ def get_firewall_block_stats(days=None):
             "hours": list(range(24)),
             "counts": [hourly_counts.get(h, 0) for h in range(24)],
         },
+    }
+
+
+# ============ 异常请求检测 ============
+
+# 预编译攻击检测正则
+_ATTACK_PATTERNS = {
+    'sql_injection': re.compile(
+        r"(?:union\s+select|select\s+.*\s+from|insert\s+into|delete\s+from|drop\s+table|"
+        r"or\s+1\s*=\s*1|'\s*or\s*'|--\s*$|;\s*drop|waitfor\s+delay|benchmark\s*\()",
+        re.IGNORECASE
+    ),
+    'xss': re.compile(
+        r"(?:<script|javascript:|on(?:error|load|click|mouseover)\s*=|"
+        r"<img\s+[^>]*onerror|<svg\s+[^>]*onload|alert\s*\(|document\.cookie)",
+        re.IGNORECASE
+    ),
+    'path_traversal': re.compile(
+        r"(?:\.\./|\.\.\\|%2e%2e|/etc/passwd|/etc/shadow|/proc/self|/windows/system32)",
+        re.IGNORECASE
+    ),
+    'vuln_scanner': re.compile(
+        r"(?:/wp-admin|/wp-login|/phpmyadmin|/\.env|/\.git|/config\.php|"
+        r"/actuator|/solr|/manager/html|/console|/debug|/swagger|"
+        r"/backup|/test\.php|/info\.php|/phpinfo)",
+        re.IGNORECASE
+    ),
+    'cmd_injection': re.compile(
+        r"(?:;\s*(?:ls|cat|id|whoami|wget|curl|bash|sh|nc|ncat)|"
+        r"\|\s*(?:ls|cat|id|whoami)|`[^`]+`|\$\([^)]+\))",
+        re.IGNORECASE
+    ),
+    'ssrf': re.compile(
+        r"(?:http://(?:127\.0\.0\.1|localhost|0\.0\.0\.0|169\.254\.\d+\.\d+|10\.\d+\.\d+\.\d+)|"
+        r"file://|gopher://|dict://)",
+        re.IGNORECASE
+    ),
+}
+
+_SUSPICIOUS_UA = re.compile(
+    r"(?:sqlmap|nikto|nmap|masscan|zgrab|dirbuster|gobuster|nuclei|"
+    r"hydra|burpsuite|metasploit|nessus|openvas|acunetix|w3af|"
+    r"python-requests/|Go-http-client|curl/|wget/)",
+    re.IGNORECASE
+)
+
+_RE_NGINX_ACCESS = re.compile(
+    r'^(\S+)\s+-\s+\S+\s+\[([^\]]+)\]\s+"(\S+)\s+(\S+)\s+\S+"\s+(\d{3})\s+\d+\s+"[^"]*"\s+"([^"]*)"'
+)
+
+
+def parse_nginx_access_log(hours=24):
+    """解析 Nginx 访问日志，检测异常请求"""
+    cutoff = datetime.now() - timedelta(hours=hours)
+    suspicious = []
+    type_counter = Counter()
+    ip_counter = Counter()
+
+    log_files = ["/var/log/nginx/access.log", "/var/log/nginx/access.log.1"]
+
+    for log_file in log_files:
+        if not os.path.exists(log_file):
+            continue
+        try:
+            with open(log_file, "r", errors="ignore") as fh:
+                for line in fh:
+                    m = _RE_NGINX_ACCESS.search(line)
+                    if not m:
+                        continue
+                    ip = m.group(1)
+                    time_str = m.group(2)
+                    method = m.group(3)
+                    uri = m.group(4)
+                    status = m.group(5)
+                    ua = m.group(6)
+
+                    try:
+                        ts = datetime.strptime(time_str.split()[0], "%d/%b/%Y:%H:%M:%S")
+                    except ValueError:
+                        continue
+                    if ts < cutoff:
+                        continue
+
+                    # 检测攻击类型
+                    detected = []
+                    for attack_type, pattern in _ATTACK_PATTERNS.items():
+                        if pattern.search(uri):
+                            detected.append(attack_type)
+
+                    # 检测可疑 UA
+                    if _SUSPICIOUS_UA.search(ua):
+                        detected.append('suspicious_ua')
+
+                    if detected:
+                        for t in detected:
+                            type_counter[t] += 1
+                        ip_counter[ip] += 1
+                        if len(suspicious) < 200:
+                            suspicious.append({
+                                "time": ts.strftime("%Y-%m-%d %H:%M:%S"),
+                                "ip": ip,
+                                "method": method,
+                                "uri": uri[:200],
+                                "status": status,
+                                "ua": ua[:100],
+                                "types": detected,
+                            })
+        except PermissionError:
+            pass
+
+    attack_type_labels = {
+        'sql_injection': 'SQL 注入',
+        'xss': 'XSS 攻击',
+        'path_traversal': '路径遍历',
+        'vuln_scanner': '漏洞扫描',
+        'cmd_injection': '命令注入',
+        'ssrf': 'SSRF',
+        'suspicious_ua': '可疑 UA',
+    }
+
+    return {
+        "total_suspicious": sum(type_counter.values()),
+        "unique_ips": len(ip_counter),
+        "type_distribution": [
+            {"type": t, "label": attack_type_labels.get(t, t), "count": c}
+            for t, c in type_counter.most_common()
+        ],
+        "top_ips": [{"ip": ip, "count": c} for ip, c in ip_counter.most_common(10)],
+        "requests": suspicious,
+        "hours": hours,
     }
 
 
@@ -1899,6 +2088,18 @@ def fail2ban_unban():
         return jsonify({"error": "Fail2Ban 未安装"}), 500
 
 
+@app.route("/api/fail2ban/history")
+@requires_auth
+def fail2ban_history():
+    """获取 Fail2Ban 封禁历史"""
+    try:
+        days = min(max(int(request.args.get("days", 7)), 1), 30)
+    except (ValueError, TypeError):
+        days = 7
+    records = _cached_call('fail2ban_history', parse_fail2ban_log, args=(days,), ttl=60)
+    return jsonify({"records": records, "days": days})
+
+
 @app.route("/api/ssh/toggle-password-auth", methods=["POST"])
 @requires_auth
 def toggle_ssh_password_auth():
@@ -2014,6 +2215,20 @@ def proxy_gateway(path):
         return jsonify({"error": str(e)}), 502
 
 
+# ============ 异常请求检测 API ============
+
+@app.route("/api/suspicious-requests")
+@requires_auth
+def api_suspicious_requests():
+    """获取异常请求检测结果"""
+    try:
+        hours = min(max(int(request.args.get("hours", 24)), 1), 168)
+    except (ValueError, TypeError):
+        hours = 24
+    result = _cached_call('suspicious_requests', parse_nginx_access_log, args=(hours,), ttl=120)
+    return jsonify(result)
+
+
 # ============ 通知系统 API ============
 
 @app.route("/api/notifications")
@@ -2022,12 +2237,15 @@ def api_notifications():
     """获取通知列表"""
     from notifications import get_notifications, get_unread_count
     status = request.args.get("status")
+    level = request.args.get("level")
+    if level and level not in ('critical', 'warning', 'info'):
+        level = None
     try:
         limit = min(max(int(request.args.get("limit", 50)), 1), 200)
         offset = max(int(request.args.get("offset", 0)), 0)
     except (ValueError, TypeError):
         return jsonify({"error": "参数类型错误"}), 400
-    notifs = get_notifications(status=status, limit=limit, offset=offset)
+    notifs = get_notifications(status=status, level=level, limit=limit, offset=offset)
     return jsonify({"notifications": notifs, "unread_count": get_unread_count()})
 
 

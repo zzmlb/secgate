@@ -129,7 +129,7 @@ def create_notification(alert_type, level, title, message, dedup_key=None, conte
     return cursor.lastrowid
 
 
-def get_notifications(status=None, limit=50, offset=0):
+def get_notifications(status=None, level=None, limit=50, offset=0):
     """查询通知列表，按时间倒序（最新的在最上面）"""
     conn = _get_conn()
     query = """SELECT * FROM notifications WHERE 1=1"""
@@ -138,6 +138,10 @@ def get_notifications(status=None, limit=50, offset=0):
     if status:
         query += " AND status = ?"
         params.append(status)
+
+    if level:
+        query += " AND level = ?"
+        params.append(level)
 
     query += """ ORDER BY created_at DESC LIMIT ? OFFSET ?"""
     params.extend([limit, offset])
@@ -216,9 +220,30 @@ def set_state(key, value):
 
 
 def cleanup_old(days=30):
-    """清理 N 天前的已处理通知"""
+    """清理 N 天前的已处理通知，并自动降级长时间未读的低优先级通知"""
     conn = _get_conn()
-    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    now = datetime.now()
+
+    # 自动降级：info 7天未读 → 自动已读
+    info_cutoff = (now - timedelta(days=7)).isoformat()
+    conn.execute(
+        """UPDATE notifications SET status = 'read', updated_at = ?
+           WHERE status = 'unread' AND level = 'info' AND created_at < ?""",
+        (now.isoformat(), info_cutoff)
+    )
+
+    # 自动降级：warning 14天未读 → 自动已读
+    warning_cutoff = (now - timedelta(days=14)).isoformat()
+    conn.execute(
+        """UPDATE notifications SET status = 'read', updated_at = ?
+           WHERE status = 'unread' AND level = 'warning' AND created_at < ?""",
+        (now.isoformat(), warning_cutoff)
+    )
+
+    # critical 不自动清理
+
+    # 清理已处理通知
+    cutoff = (now - timedelta(days=days)).isoformat()
     conn.execute(
         """DELETE FROM notifications
            WHERE created_at < ? AND (status IN ('read', 'ignored') OR resolved_at IS NOT NULL)""",
@@ -274,6 +299,7 @@ class AlertEngine(threading.Thread):
         # 每 5min（原为每 1min，降低重量级检测频率）
         if self._tick % 5 == 0:
             self._check_service_stopped()
+            self._check_suspicious_requests()
 
         # 每 2min
         if self._tick % 2 == 0:
@@ -288,8 +314,8 @@ class AlertEngine(threading.Thread):
         if self._tick % 10 == 0:
             self._check_ai_no_auth()
 
-        # 每天清理
-        if self._tick % 1440 == 0:
+        # 每小时清理（含自动降级未读通知）
+        if self._tick % 60 == 0:
             cleanup_old(30)
 
     # ---- 规则 1：SSH 密码登录未关闭 ----
@@ -541,7 +567,29 @@ class AlertEngine(threading.Thread):
         except Exception as e:
             print(f"[AlertEngine] _check_service_stopped error: {e}")
 
-    # ---- 规则 8：磁盘空间不足（>90%） ----
+    # ---- 规则 8：异常请求突增（1h>50次） ----
+    def _check_suspicious_requests(self):
+        try:
+            from app import parse_nginx_access_log
+            result = parse_nginx_access_log(hours=1)
+            total = result.get('total_suspicious', 0)
+
+            hour_key = datetime.now().strftime('%Y%m%d%H')
+            dedup = f'suspicious_requests_{hour_key}'
+
+            if total > 50:
+                create_notification(
+                    alert_type='suspicious_requests',
+                    level='warning',
+                    title='异常请求突增告警',
+                    message=f'最近 1 小时内检测到 {total} 次异常请求（SQL注入/XSS/路径遍历等），请检查 Nginx 访问日志。',
+                    dedup_key=dedup,
+                    context={'count': total, 'hour': hour_key}
+                )
+        except Exception as e:
+            print(f"[AlertEngine] _check_suspicious_requests error: {e}")
+
+    # ---- 规则 9：磁盘空间不足（>90%） ----
     def _check_disk_usage(self):
         try:
             import psutil

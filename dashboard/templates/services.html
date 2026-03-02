@@ -2303,7 +2303,7 @@
                         </div>
                     </div>
                     <div class="panel">
-                        <div class="panel-header"><span class="icon">&#128682;</span> 被扫描端口 TOP 15</div>
+                        <div class="panel-header"><span class="icon">&#128682;</span> 被扫描端口 TOP 15 <span id="fwPortCoverage" style="font-size:12px;color:var(--text-secondary);font-weight:400;margin-left:auto;"></span></div>
                         <div class="panel-body">
                             <div class="chart-container" id="fwPortChart"></div>
                         </div>
@@ -2358,6 +2358,14 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- 异常请求检测 -->
+                <div class="panel full-width">
+                    <div class="panel-header"><span class="icon">&#128270;</span> 异常请求检测（24h）</div>
+                    <div class="panel-body" id="suspiciousRequestsPanel">
+                        <div class="loading-overlay"><span class="pulse">加载中...</span></div>
                     </div>
                 </div>
 
@@ -3345,21 +3353,137 @@ function renderFail2Ban(f2b) {
     if (!el) return;
     let html = '<ul class="status-list">';
     html += '<li class="status-item"><span class="status-key">运行状态</span><span class="status-val">' + (f2b.running ? '<span class="badge badge-success">运行中</span>' : '<span class="badge badge-warning">未运行</span>') + '</span></li>';
-    html += '<li class="status-item"><span class="status-key">功能说明</span><span class="status-val" style="font-size:12px;color:var(--text-secondary)">自动封禁多次登录失败的 IP</span></li>';
     html += '<li class="status-item"><span class="status-key">监控规则</span><span class="status-val" style="color:var(--accent-cyan)">' + f2b.jails.length + ' 个 Jail</span></li>';
     html += '<li class="status-item"><span class="status-key">当前封禁</span><span class="status-val" style="color:var(--accent-red);font-weight:800">' + f2b.banned_ips + ' 个 IP</span></li>';
-    // 显示封禁的IP列表及解封按钮
-    if (f2b.banned_list && f2b.banned_list.length > 0) {
-        html += '<li class="status-item" style="flex-direction:column;align-items:flex-start;gap:6px;"><span class="status-key">封禁列表</span><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">';
-        f2b.banned_list.forEach(function(ip) {
-            html += '<span class="badge badge-danger" style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;">' + escHtml(ip) + ' <button onclick="fail2banUnban(\'' + escHtml(ip) + '\')" style="background:none;border:none;color:var(--accent-yellow);cursor:pointer;font-size:12px;padding:0 2px;" title="解封此 IP">&#10006;</button></span>';
-        });
-        html += '</div></li>';
-    }
-    // 手动封禁输入
-    html += '<li class="status-item" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:8px;"><span class="status-key">手动封禁</span><div style="display:flex;gap:6px;margin-top:4px;"><input type="text" id="f2bBanIP" placeholder="输入 IP 地址" style="padding:4px 10px;font-size:12px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:6px;width:160px;outline:none;"><button class="dim-btn" style="font-size:11px;padding:3px 10px;" onclick="fail2banBan()">封禁</button></div></li>';
     html += '</ul>';
+
+    // 卡片式展示当前封禁 IP（含封禁时间和 jail）
+    if (f2b.ban_details && f2b.ban_details.length > 0) {
+        html += '<div style="margin-top:10px;font-size:12px;color:var(--text-secondary);margin-bottom:6px;">当前封禁列表</div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+        f2b.ban_details.forEach(function(d) {
+            html += '<div style="background:rgba(239,83,80,0.08);border:1px solid rgba(239,83,80,0.25);border-radius:10px;padding:10px 14px;min-width:180px;">';
+            html += '<div style="font-family:\'Courier New\',monospace;font-weight:700;color:var(--accent-red);font-size:14px;margin-bottom:4px;">' + escHtml(d.ip) + '</div>';
+            html += '<div style="font-size:11px;color:var(--text-secondary);">Jail: <span style="color:var(--accent-cyan)">' + escHtml(d.jail) + '</span></div>';
+            html += '<div style="font-size:11px;color:var(--text-secondary);">封禁: ' + escHtml(d.time) + '</div>';
+            html += '<button onclick="fail2banUnban(\'' + escHtml(d.ip) + '\')" style="margin-top:6px;padding:3px 10px;font-size:11px;background:rgba(255,167,38,0.15);color:var(--accent-yellow);border:1px solid rgba(255,167,38,0.3);border-radius:6px;cursor:pointer;">解封</button>';
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    // 手动封禁输入
+    html += '<div style="margin-top:10px;display:flex;gap:6px;align-items:center;"><input type="text" id="f2bBanIP" placeholder="输入 IP 地址" style="padding:4px 10px;font-size:12px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:6px;width:160px;outline:none;"><button class="dim-btn" style="font-size:11px;padding:3px 10px;" onclick="fail2banBan()">手动封禁</button></div>';
+
+    // 封禁历史折叠区域
+    html += '<div style="margin-top:12px;">';
+    html += '<button onclick="toggleF2bHistory(this)" style="background:transparent;border:1px solid var(--border-color);border-radius:6px;color:var(--text-secondary);font-size:12px;padding:6px 14px;cursor:pointer;width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center;">封禁历史（近 7 天）<span style="font-size:10px;">&#9660;</span></button>';
+    html += '<div id="f2bHistoryContent" style="display:none;margin-top:8px;max-height:200px;overflow-y:auto;"></div>';
+    html += '</div>';
+
     el.innerHTML = html;
+
+    // 加载封禁历史
+    loadF2bHistory();
+}
+
+function toggleF2bHistory(btn) {
+    var content = document.getElementById('f2bHistoryContent');
+    if (!content) return;
+    var visible = content.style.display !== 'none';
+    content.style.display = visible ? 'none' : 'block';
+    btn.querySelector('span').innerHTML = visible ? '&#9660;' : '&#9650;';
+}
+
+function loadF2bHistory() {
+    fetch('/api/fail2ban/history', {credentials: 'include'})
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+            var el = document.getElementById('f2bHistoryContent');
+            if (!el) return;
+            var records = data.records || [];
+            if (records.length === 0) {
+                el.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);padding:8px;">暂无记录</div>';
+                return;
+            }
+            var html = '<table style="width:100%;font-size:11px;border-collapse:collapse;">';
+            html += '<tr style="color:var(--text-secondary);"><th style="text-align:left;padding:4px 6px;">时间</th><th style="text-align:left;padding:4px 6px;">操作</th><th style="text-align:left;padding:4px 6px;">IP</th><th style="text-align:left;padding:4px 6px;">Jail</th></tr>';
+            records.slice().reverse().slice(0, 50).forEach(function(r) {
+                var color = r.action === 'Ban' ? 'var(--accent-red)' : 'var(--accent-green)';
+                html += '<tr style="border-bottom:1px solid rgba(42,48,101,0.3);"><td style="padding:3px 6px;">' + escHtml(r.time) + '</td><td style="padding:3px 6px;color:' + color + ';font-weight:600;">' + escHtml(r.action) + '</td><td style="padding:3px 6px;font-family:\'Courier New\',monospace;">' + escHtml(r.ip) + '</td><td style="padding:3px 6px;color:var(--accent-cyan);">' + escHtml(r.jail) + '</td></tr>';
+            });
+            html += '</table>';
+            el.innerHTML = html;
+        })
+        .catch(function(){ });
+}
+
+function loadSuspiciousRequests() {
+    fetch('/api/suspicious-requests', {credentials: 'include'})
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+            var el = document.getElementById('suspiciousRequestsPanel');
+            if (!el) return;
+            var total = data.total_suspicious || 0;
+            var uniqueIPs = data.unique_ips || 0;
+            var types = data.type_distribution || [];
+            var requests = data.requests || [];
+
+            if (total === 0) {
+                el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:14px;">&#9989; 最近 24 小时未检测到异常请求</div>';
+                return;
+            }
+
+            var html = '';
+            // 统计概览
+            html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px;">';
+            html += '<div style="background:rgba(239,83,80,0.08);border:1px solid rgba(239,83,80,0.2);border-radius:10px;padding:14px;text-align:center;"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">异常请求</div><div style="font-size:28px;font-weight:800;color:var(--accent-red);font-family:\'Courier New\',monospace;">' + total + '</div></div>';
+            html += '<div style="background:rgba(255,167,38,0.08);border:1px solid rgba(255,167,38,0.2);border-radius:10px;padding:14px;text-align:center;"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">攻击类型</div><div style="font-size:28px;font-weight:800;color:var(--accent-yellow);font-family:\'Courier New\',monospace;">' + types.length + '</div></div>';
+            html += '<div style="background:rgba(79,195,247,0.08);border:1px solid rgba(79,195,247,0.2);border-radius:10px;padding:14px;text-align:center;"><div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">来源 IP</div><div style="font-size:28px;font-weight:800;color:var(--accent-blue);font-family:\'Courier New\',monospace;">' + uniqueIPs + '</div></div>';
+            html += '</div>';
+
+            // 攻击类型分布
+            if (types.length > 0) {
+                html += '<div style="margin-bottom:16px;"><div style="font-size:13px;font-weight:600;margin-bottom:8px;">攻击类型分布</div>';
+                html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+                types.forEach(function(t) {
+                    html += '<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(239,83,80,0.08);border:1px solid rgba(239,83,80,0.2);border-radius:8px;font-size:12px;">';
+                    html += '<span style="color:var(--text-primary);font-weight:600;">' + escHtml(t.label) + '</span>';
+                    html += '<span style="color:var(--accent-red);font-weight:800;">' + t.count + '</span>';
+                    html += '</span>';
+                });
+                html += '</div></div>';
+            }
+
+            // 异常请求表格
+            if (requests.length > 0) {
+                html += '<div style="margin-bottom:8px;font-size:13px;font-weight:600;">最近异常请求</div>';
+                html += '<div style="max-height:300px;overflow-y:auto;">';
+                html += '<table style="width:100%;font-size:11px;border-collapse:collapse;">';
+                html += '<tr style="color:var(--text-secondary);position:sticky;top:0;background:var(--bg-card);"><th style="text-align:left;padding:6px;">时间</th><th style="text-align:left;padding:6px;">IP</th><th style="text-align:left;padding:6px;">方法</th><th style="text-align:left;padding:6px;">URI</th><th style="text-align:left;padding:6px;">状态</th><th style="text-align:left;padding:6px;">类型</th></tr>';
+                requests.slice(0, 50).forEach(function(r) {
+                    var typeLabels = r.types.map(function(t) {
+                        var labels = {sql_injection:'SQL注入',xss:'XSS',path_traversal:'路径遍历',vuln_scanner:'扫描',cmd_injection:'命令注入',ssrf:'SSRF',suspicious_ua:'可疑UA'};
+                        return labels[t] || t;
+                    }).join(', ');
+                    html += '<tr style="border-bottom:1px solid rgba(42,48,101,0.3);">';
+                    html += '<td style="padding:4px 6px;white-space:nowrap;">' + escHtml(r.time) + '</td>';
+                    html += '<td style="padding:4px 6px;font-family:\'Courier New\',monospace;">' + escHtml(r.ip) + '</td>';
+                    html += '<td style="padding:4px 6px;">' + escHtml(r.method) + '</td>';
+                    html += '<td style="padding:4px 6px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escHtml(r.uri) + '">' + escHtml(r.uri) + '</td>';
+                    html += '<td style="padding:4px 6px;">' + escHtml(r.status) + '</td>';
+                    html += '<td style="padding:4px 6px;color:var(--accent-red);">' + escHtml(typeLabels) + '</td>';
+                    html += '</tr>';
+                });
+                html += '</table></div>';
+            }
+
+            el.innerHTML = html;
+        })
+        .catch(function(e){
+            var el = document.getElementById('suspiciousRequestsPanel');
+            if (el) el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:13px;">检测数据加载失败</div>';
+        });
 }
 
 function fail2banBan() {
@@ -3743,7 +3867,14 @@ function loadDashboardData() {
             renderTopIPs(as.top_ips);
             renderTopUsers(as.top_users, as.total_attacks);
             if (fb.daily_trend) renderFWDailyChart(fb.daily_trend);
-            if (fb.top_ports) renderFWPortChart(fb.top_ports);
+            if (fb.top_ports) {
+                renderFWPortChart(fb.top_ports);
+                var covEl = document.getElementById('fwPortCoverage');
+                if (covEl && fb.total_blocked > 0 && fb.top_ports_total) {
+                    var pct = (fb.top_ports_total / fb.total_blocked * 100).toFixed(1);
+                    covEl.textContent = '覆盖 ' + pct + '% 的拦截';
+                }
+            }
             if (fb.top_ips) renderFWTopIPs(fb.top_ips);
             if (fb.daily_trend && as.daily_trend) renderCombinedChart(as.daily_trend, fb.daily_trend);
             if (as.top_countries) renderCountryChart('sshCountryChart', as.top_countries, 'ssh');
@@ -3753,6 +3884,7 @@ function loadDashboardData() {
             renderFail2Ban(data.fail2ban);
             renderSystemResources(data.system);
             renderPorts(data.ports);
+            loadSuspiciousRequests();
             // 通知系统：更新 badge + 缓存数据给通知面板
             updateBadgeFromData(data);
             cacheDashDataForNotif(data);
@@ -5487,6 +5619,7 @@ function toggleAiChat() {
 
 /* ===== 通知系统 ===== */
 var _notifPanelOpen = false;
+var _notifLevelFilter = '';
 
 function toggleNotifPanel() {
     _notifPanelOpen = !_notifPanelOpen;
@@ -5498,14 +5631,23 @@ function toggleNotifPanel() {
     }
 }
 
+function filterNotifLevel(btn, level) {
+    _notifLevelFilter = level;
+    btn.parentElement.querySelectorAll('.dim-btn').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+    loadNotifications();
+}
+
 function loadNotifications() {
-    fetch('/api/notifications', {credentials: 'include'})
+    var url = '/api/notifications';
+    if (_notifLevelFilter) url += '?level=' + _notifLevelFilter;
+    fetch(url, {credentials: 'include'})
         .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
         .then(function(data){
             var list = document.getElementById('notifList');
             if (!data.notifications || data.notifications.length === 0) {
                 list.innerHTML = '<div class="notif-empty">' +
-                    '<div class="empty-icon">&#128275;</div>暂无安全通知' +
+                    '<div class="empty-icon">&#128275;</div>暂无' + (_notifLevelFilter ? {critical:'紧急',warning:'警告',info:'提示'}[_notifLevelFilter] : '') + '安全通知' +
                     '<div class="empty-sub">系统每 60 秒自动检测一次，发现风险会实时推送到这里</div></div>';
                 return;
             }
@@ -5686,6 +5828,12 @@ if (typeof localStorage !== 'undefined' && localStorage.getItem('notifHelpDismis
             <button onclick="markAllRead()" title="将所有未读通知标记为已读">全部已读</button>
             <button class="notif-btn-close" onclick="toggleNotifPanel()">&times;</button>
         </div>
+    </div>
+    <div style="display:flex;gap:4px;padding:8px 16px;border-bottom:1px solid var(--border-color);background:rgba(255,255,255,0.02);">
+        <button class="dim-btn active" data-level="" onclick="filterNotifLevel(this,'')">全部</button>
+        <button class="dim-btn" data-level="critical" onclick="filterNotifLevel(this,'critical')" style="color:var(--accent-red)">紧急</button>
+        <button class="dim-btn" data-level="warning" onclick="filterNotifLevel(this,'warning')" style="color:var(--accent-yellow)">警告</button>
+        <button class="dim-btn" data-level="info" onclick="filterNotifLevel(this,'info')" style="color:var(--accent-blue)">提示</button>
     </div>
 
     <!-- 安全状态概览 -->

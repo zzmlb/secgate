@@ -685,7 +685,7 @@
                     </div>
                 </div>
                 <div class="panel">
-                    <div class="panel-header"><span class="icon">&#128682;</span> 被扫描端口 TOP 15</div>
+                    <div class="panel-header"><span class="icon">&#128682;</span> 被扫描端口 TOP 15 <span id="fwPortCoverage" style="font-size:12px;color:var(--text-secondary);font-weight:400;margin-left:auto;"></span></div>
                     <div class="panel-body">
                         <div class="chart-container" id="fwPortChart"></div>
                     </div>
@@ -1398,7 +1398,14 @@ function refreshData() {
 
             // 防火墙拦截图表（默认天维度）
             if (fb.daily_trend) renderFWDailyChart(fb.daily_trend);
-            if (fb.top_ports) renderFWPortChart(fb.top_ports);
+            if (fb.top_ports) {
+                renderFWPortChart(fb.top_ports);
+                var covEl = document.getElementById('fwPortCoverage');
+                if (covEl && fb.total_blocked > 0 && fb.top_ports_total) {
+                    var pct = (fb.top_ports_total / fb.total_blocked * 100).toFixed(1);
+                    covEl.textContent = '覆盖 ' + pct + '% 的拦截';
+                }
+            }
             if (fb.top_ips) renderFWTopIPs(fb.top_ips);
             if (fb.daily_trend && as.daily_trend) renderCombinedChart(as.daily_trend, fb.daily_trend);
 
