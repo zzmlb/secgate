@@ -33,6 +33,8 @@ rsync -a \
     --exclude='.pids.json' \
     --exclude='.credentials.json' \
     --exclude='gateway/config.json' \
+    --exclude='agent/.env' \
+    --exclude='security-plan.md' \
     --exclude='dashboard/data' \
     --exclude='scanner/data' \
     --exclude='.claude' \
