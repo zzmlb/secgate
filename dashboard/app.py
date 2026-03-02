@@ -19,7 +19,7 @@ from flask import Flask, render_template, jsonify, request, Response, redirect
 
 # 将 pj226 目录加入路径，以便导入 scanner 模块
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from shared import detect_public_ip, get_or_create_credential
+from shared import detect_public_ip, get_or_create_credential, NGINX_CONF_PATH
 
 app = Flask(__name__)
 
@@ -853,7 +853,7 @@ def get_gateway_mappings():
     """解析 Nginx 网关配置，返回 {网关端口: 业务端口} 映射"""
     mappings = {}
     try:
-        with open("/etc/nginx/sites-available/gateway.conf") as f:
+        with open(NGINX_CONF_PATH) as f:
             content = f.read()
         for m in re.finditer(
             r"listen\s+(\d+);.*?proxy_pass\s+http://127\.0\.0\.1:(\d+)",
@@ -1185,7 +1185,8 @@ def _redact_key(value):
 def scan_ai_api_keys():
     """扫描文件系统中的 AI API Key"""
     findings = []
-    scan_dirs = ["/root/pj226", "/root"]
+    _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    scan_dirs = [_project_root, os.path.expanduser("~")]
     scan_extensions = {'.env', '.py', '.json', '.yaml', '.yml', '.toml', '.conf', '.cfg', '.ini', '.sh'}
     scan_filenames = {'.env', '.env.local', '.env.production', '.env.development',
                       'config.json', 'config.yaml', 'config.yml', 'settings.json',
@@ -1479,7 +1480,7 @@ def _check_service_auth(port):
 def scan_ai_code_imports():
     """扫描项目代码中的 AI SDK 使用"""
     imports_found = []
-    scan_dirs = ["/root/pj226"]
+    scan_dirs = [os.path.dirname(os.path.dirname(os.path.abspath(__file__)))]
     scanned = set()
 
     import_pattern = re.compile(
@@ -2055,7 +2056,10 @@ def api_notifications_count():
     return jsonify({"unread_count": get_unread_count()})
 
 
-# ============ AI 助手 LLM 设置 ============
+# ============ AI 助手 LLM 设置（读写 agent/.env）============
+
+_AGENT_ENV_FILE = os.path.join(os.path.dirname(__file__), "..", "agent", ".env")
+
 
 def _mask_key(key):
     if not key:
@@ -2065,25 +2069,49 @@ def _mask_key(key):
     return "****"
 
 
+def _read_agent_env() -> dict:
+    """读取 agent/.env 文件"""
+    env = {}
+    if os.path.exists(_AGENT_ENV_FILE):
+        with open(_AGENT_ENV_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    env[key.strip()] = value.strip()
+    return env
+
+
+def _write_agent_env(env: dict):
+    """写入 agent/.env 文件"""
+    lines = []
+    for key, value in env.items():
+        if value:
+            lines.append(f"{key}={value}\n")
+    with open(_AGENT_ENV_FILE, "w") as f:
+        f.writelines(lines)
+
+
 @app.route("/api/llm-settings", methods=["GET"])
 @requires_auth
 def api_llm_settings_get():
     """读取 LLM 配置（Key 脱敏返回）"""
-    from shared import load_credentials
-    creds = load_credentials()
+    env = _read_agent_env()
+    api_base = env.get("ANTHROPIC_BASE_URL", "")
+    api_key = env.get("ANTHROPIC_AUTH_TOKEN", "")
+    model = env.get("ANTHROPIC_MODEL", "")
     return jsonify({
-        "llm_api_base": creds.get("llm_api_base", ""),
-        "llm_api_key": _mask_key(creds.get("llm_api_key", "")),
-        "llm_model": creds.get("llm_model", ""),
-        "configured": bool(creds.get("llm_api_key") and creds.get("llm_api_base") and creds.get("llm_model")),
+        "llm_api_base": api_base,
+        "llm_api_key": _mask_key(api_key),
+        "llm_model": model,
+        "configured": bool(api_base and api_key),
     })
 
 
 @app.route("/api/llm-settings", methods=["POST"])
 @requires_auth
 def api_llm_settings_post():
-    """保存 LLM 配置到 .credentials.json"""
-    from shared import load_credentials, save_credentials
+    """保存 LLM 配置到 agent/.env"""
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "请求体不能为空"}), 400
@@ -2092,58 +2120,56 @@ def api_llm_settings_post():
     api_key = (data.get("llm_api_key") or "").strip()
     model = (data.get("llm_model") or "").strip()
 
-    if not api_base or not model:
-        return jsonify({"error": "API 地址和模型名不能为空"}), 400
+    if not api_base:
+        return jsonify({"error": "API 地址不能为空"}), 400
 
-    creds = load_credentials()
-    creds["llm_api_base"] = api_base.rstrip("/")
+    env = _read_agent_env()
+    env["ANTHROPIC_BASE_URL"] = api_base.rstrip("/")
     # ___KEEP___ 表示前端未修改密钥，保留已有值
     if api_key and api_key != "___KEEP___":
-        creds["llm_api_key"] = api_key
-    elif not creds.get("llm_api_key"):
+        env["ANTHROPIC_AUTH_TOKEN"] = api_key
+    elif not env.get("ANTHROPIC_AUTH_TOKEN"):
         return jsonify({"error": "API 密钥不能为空"}), 400
-    creds["llm_model"] = model
-    save_credentials(creds)
+    if model:
+        env["ANTHROPIC_MODEL"] = model
+    _write_agent_env(env)
     return jsonify({"ok": True, "message": "配置已保存，AI 助手将在下次对话时自动生效。"})
 
 
 @app.route("/api/llm-settings/test", methods=["GET"])
 @requires_auth
 def api_llm_settings_test():
-    """测试 LLM 连接（发一条简短请求验证）"""
-    import requests as http_req
-    from shared import load_credentials
-    creds = load_credentials()
-    api_base = creds.get("llm_api_base", "")
-    api_key = creds.get("llm_api_key", "")
-    model = creds.get("llm_model", "")
+    """测试 LLM 连接（通过 claude CLI 验证）"""
+    import subprocess
+    env = _read_agent_env()
+    api_base = env.get("ANTHROPIC_BASE_URL", "")
+    api_key = env.get("ANTHROPIC_AUTH_TOKEN", "")
+    model = env.get("ANTHROPIC_MODEL", "")
 
-    if not api_base or not api_key or not model:
+    if not api_base or not api_key:
         return jsonify({"ok": False, "error": "未完成配置，请先保存设置"})
 
     try:
-        url = api_base.rstrip("/") + "/chat/completions"
-        resp = http_req.post(
-            url,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={"model": model, "messages": [{"role": "user", "content": "Hi"}], "max_tokens": 16},
-            timeout=15,
+        test_env = os.environ.copy()
+        test_env.update(env)
+        test_env["DISABLE_CLAUDE_TELEMETRY"] = "1"
+        cmd = ["claude", "--print", "--max-turns", "1"]
+        if model:
+            cmd.extend(["--model", model])
+        cmd.append("回复两个字：你好")
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30, env=test_env
         )
-        if resp.status_code == 200:
-            body = resp.json()
-            content = ""
-            choices = body.get("choices", [])
-            if choices:
-                content = choices[0].get("message", {}).get("content", "")
-            return jsonify({"ok": True, "message": f"连接成功！模型回复: {content[:60]}"})
-        elif resp.status_code == 401:
-            return jsonify({"ok": False, "error": "API Key 无效（401），请检查密钥"})
+        if result.returncode == 0 and result.stdout.strip():
+            reply = result.stdout.strip()[:60]
+            return jsonify({"ok": True, "message": f"连接成功！模型回复: {reply}"})
         else:
-            return jsonify({"ok": False, "error": f"HTTP {resp.status_code}: {resp.text[:200]}"})
-    except http_req.exceptions.Timeout:
-        return jsonify({"ok": False, "error": "连接超时（15s），请检查 API 地址"})
-    except http_req.exceptions.ConnectionError:
-        return jsonify({"ok": False, "error": "无法连接，请检查 API 地址是否正确"})
+            err = result.stderr.strip()[-200:] if result.stderr else "未知错误"
+            return jsonify({"ok": False, "error": f"调用失败: {err}"})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "连接超时（30s），请检查 API 地址"})
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "Claude CLI 未安装，请先安装 claude 命令"})
     except Exception as e:
         return jsonify({"ok": False, "error": f"测试失败: {str(e)[:200]}"})
 

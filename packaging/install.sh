@@ -51,8 +51,8 @@ info "安装 SecGate ${VERSION_DISPLAY}"
 if [[ -d "$INSTALL_DIR" ]]; then
     info "检测到已有安装，备份数据文件..."
     mkdir -p "$BACKUP_DIR"
-    for f in .credentials.json gateway/config.json; do
-        [[ -f "$INSTALL_DIR/$f" ]] && cp "$INSTALL_DIR/$f" "$BACKUP_DIR/" && info "  备份 $f"
+    for f in .credentials.json gateway/config.json agent/.env; do
+        [[ -f "$INSTALL_DIR/$f" ]] && cp "$INSTALL_DIR/$f" "$BACKUP_DIR/$(basename $f)" && info "  备份 $f"
     done
     [[ -d "$INSTALL_DIR/dashboard/data" ]] && cp -r "$INSTALL_DIR/dashboard/data" "$BACKUP_DIR/dashboard-data" && info "  备份 dashboard/data/"
     [[ -d "$INSTALL_DIR/scanner/data" ]] && cp -r "$INSTALL_DIR/scanner/data" "$BACKUP_DIR/scanner-data" && info "  备份 scanner/data/"
@@ -95,6 +95,7 @@ if [[ -d "$BACKUP_DIR" ]]; then
     info "恢复备份数据..."
     [[ -f "$BACKUP_DIR/.credentials.json" ]] && cp "$BACKUP_DIR/.credentials.json" "$INSTALL_DIR/"
     [[ -f "$BACKUP_DIR/config.json" ]] && mkdir -p "$INSTALL_DIR/gateway" && cp "$BACKUP_DIR/config.json" "$INSTALL_DIR/gateway/"
+    [[ -f "$BACKUP_DIR/.env" ]] && mkdir -p "$INSTALL_DIR/agent" && cp "$BACKUP_DIR/.env" "$INSTALL_DIR/agent/"
     [[ -d "$BACKUP_DIR/dashboard-data" ]] && mkdir -p "$INSTALL_DIR/dashboard" && cp -r "$BACKUP_DIR/dashboard-data" "$INSTALL_DIR/dashboard/data"
     [[ -d "$BACKUP_DIR/scanner-data" ]] && mkdir -p "$INSTALL_DIR/scanner" && cp -r "$BACKUP_DIR/scanner-data" "$INSTALL_DIR/scanner/data"
     rm -rf "$BACKUP_DIR"

@@ -14,8 +14,10 @@ SecGate 是一个服务器安全网关一体化管理平台，功能包括：
 
 ## 目录结构
 
+项目默认安装在 `/opt/secgate/`，结构如下：
+
 ```
-/root/pj226/
+<项目根目录>/
 ├── secgate              # CLI 管理工具（start/stop/restart/status/creds/setup）
 ├── shared.py            # 公共模块（IP 检测、凭证管理）
 ├── requirements.txt     # Python 依赖
@@ -32,6 +34,7 @@ SecGate 是一个服务器安全网关一体化管理平台，功能包括：
 │       └── services.html # 看板前端页面
 └── agent/
     ├── app.py           # AI 助手（Chainlit, 端口 8502）
+    ├── .env             # LLM 配置（ANTHROPIC_BASE_URL、ANTHROPIC_AUTH_TOKEN、ANTHROPIC_MODEL）
     └── CLAUDE.md        # 本文件
 ```
 
@@ -39,15 +42,16 @@ SecGate 是一个服务器安全网关一体化管理平台，功能包括：
 
 | 文件 | 用途 |
 |------|------|
-| `/root/pj226/gateway/config.json` | 网关配置：IP 白名单、Token、受保护端口 |
-| `/root/pj226/.credentials.json` | 凭证：dashboard 密码、gateway 密钥 |
+| `gateway/config.json` | 网关配置：IP 白名单、Token、受保护端口 |
+| `.credentials.json` | 凭证：dashboard 密码、gateway 密钥 |
+| `agent/.env` | AI 助手 LLM 配置 |
 | `/etc/nginx/sites-available/gateway.conf` | Nginx 认证代理配置 |
 
 ## 常用排查命令
 
 ```bash
 # 查看服务状态
-/root/pj226/secgate status
+secgate status
 
 # 查看 iptables 网关规则
 iptables -t nat -L GATEWAY_AUTH -n --line-numbers
@@ -98,7 +102,6 @@ free -h && df -h && uptime
 
 ## 注意事项
 
-- 工作目录为 /root/pj226/
 - 回答简洁、专业、有条理
 - 涉及安全配置时详细解释含义
 - 发现安全隐患时主动提醒

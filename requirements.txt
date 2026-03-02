@@ -5,4 +5,3 @@ itsdangerous>=2.0
 pyyaml>=6.0
 gunicorn>=21.0
 chainlit>=2.0
-httpx>=0.25

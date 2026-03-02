@@ -9,6 +9,16 @@ import socket
 PROJECT_DIR = os.path.dirname(__file__)
 CREDENTIALS_FILE = os.path.join(PROJECT_DIR, ".credentials.json")
 
+# Nginx 配置路径（Ubuntu/Debian 标准路径）
+NGINX_CONF_PATH = os.environ.get(
+    "SECGATE_NGINX_CONF",
+    "/etc/nginx/sites-available/gateway.conf"
+)
+NGINX_ENABLED_PATH = os.environ.get(
+    "SECGATE_NGINX_ENABLED",
+    "/etc/nginx/sites-enabled/gateway.conf"
+)
+
 # ============ 公网 IP 自动检测 ============
 
 _cached_public_ip = None

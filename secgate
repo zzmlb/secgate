@@ -123,16 +123,11 @@ def cmd_start():
             env["DISABLE_CLAUDE_TELEMETRY"] = "1"
             env.pop("CLAUDECODE", None)
             # Chainlit 密码认证需要 JWT secret
-            from shared import get_or_create_credential, load_credentials
+            from shared import get_or_create_credential
             import secrets as _sec
             env["CHAINLIT_AUTH_SECRET"] = get_or_create_credential(
                 "chainlit_auth_secret", lambda: _sec.token_hex(32)
             )
-            # 传入 Anthropic API Key（如果已配置）
-            stored_creds = load_credentials()
-            api_key = stored_creds.get("anthropic_api_key", "")
-            if api_key:
-                env["ANTHROPIC_API_KEY"] = api_key
             proc = subprocess.Popen(
                 ["chainlit", "run", "app.py", "--host", "0.0.0.0", "--port", str(agent_port)],
                 stdout=open(agent_log, "a"),
@@ -347,8 +342,9 @@ def cmd_setup():
     subprocess.run(["python3", os.path.join(PROJECT_DIR, "gateway", "generate-nginx.py")])
 
     # 确保 sites-enabled 软链接存在
-    src = "/etc/nginx/sites-available/gateway.conf"
-    dst = "/etc/nginx/sites-enabled/gateway.conf"
+    from shared import NGINX_CONF_PATH, NGINX_ENABLED_PATH
+    src = NGINX_CONF_PATH
+    dst = NGINX_ENABLED_PATH
     if os.path.exists(src) and not os.path.exists(dst):
         os.symlink(src, dst)
     subprocess.run(["nginx", "-t"], capture_output=True)
@@ -450,7 +446,7 @@ SecGate - 安全网关一体化管理工具
 
 激活 AI 助手:
     在 Dashboard > AI 安全 > 助手设置 中配置 LLM
-    支持通义千问、DeepSeek、OpenAI 等 OpenAI 兼容 API
+    支持通义千问（DashScope）、DeepSeek 等兼容 Anthropic 代理的 API
 
 日常管理:
     secgate start     # 启动

@@ -426,6 +426,7 @@ def gateway_status():
         "token_count": len(cfg.get("tokens", {})),
         "whitelist_count": len(cfg.get("ip_whitelist", [])),
         "ip_whitelist": cfg.get("ip_whitelist", []),
+        "server_ip": detect_public_ip(),
         "session_max_age_hours": SESSION_MAX_AGE // 3600,
         "protected_port_count": len(protected),
         "protected_ports": [

@@ -2,6 +2,8 @@
 .credentials.json
 .pids.json
 gateway/config.json
+agent/.env
+security-plan.md
 
 # 数据目录
 dashboard/data/
