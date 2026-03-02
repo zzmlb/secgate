@@ -1248,6 +1248,13 @@ def get_services_detail():
             "gateway_port": gateway_port,
         })
 
+    # 标记后端已离线的网关代理端口
+    for svc in services:
+        if svc["port_role"] == "gateway" and svc["proxy_target"]:
+            svc["backend_offline"] = svc["proxy_target"] not in seen_ports
+        else:
+            svc["backend_offline"] = False
+
     # 按端口排序
     services.sort(key=lambda s: s["port"])
     return services

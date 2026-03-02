@@ -2363,7 +2363,7 @@
 
                 <!-- 异常请求检测 -->
                 <div class="panel full-width">
-                    <div class="panel-header"><span class="icon">&#128270;</span> 异常请求检测（24h）</div>
+                    <div class="panel-header"><span class="icon">&#128270;</span> 异常请求检测（24h）<span style="font-size:11px;color:var(--text-secondary);font-weight:400;margin-left:8px;">基于 Nginx 访问日志分析，非防火墙拦截</span></div>
                     <div class="panel-body" id="suspiciousRequestsPanel">
                         <div class="loading-overlay"><span class="pulse">加载中...</span></div>
                     </div>
@@ -3357,12 +3357,15 @@ function renderFail2Ban(f2b) {
     html += '<li class="status-item"><span class="status-key">当前封禁</span><span class="status-val" style="color:var(--accent-red);font-weight:800">' + f2b.banned_ips + ' 个 IP</span></li>';
     html += '</ul>';
 
-    // 卡片式展示当前封禁 IP（含封禁时间和 jail）
+    // 卡片式展示当前封禁 IP（含封禁时间和 jail），默认显示 2 个
     if (f2b.ban_details && f2b.ban_details.length > 0) {
-        html += '<div style="margin-top:10px;font-size:12px;color:var(--text-secondary);margin-bottom:6px;">当前封禁列表</div>';
-        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
-        f2b.ban_details.forEach(function(d) {
-            html += '<div style="background:rgba(239,83,80,0.08);border:1px solid rgba(239,83,80,0.25);border-radius:10px;padding:10px 14px;min-width:180px;">';
+        var showCount = 2;
+        var total = f2b.ban_details.length;
+        html += '<div style="margin-top:10px;font-size:12px;color:var(--text-secondary);margin-bottom:6px;">当前封禁列表（' + total + ' 个）</div>';
+        html += '<div id="f2bBanCards" style="display:flex;flex-wrap:wrap;gap:8px;">';
+        f2b.ban_details.forEach(function(d, i) {
+            var hidden = i >= showCount ? ' style="display:none;" data-f2b-extra' : '';
+            html += '<div' + hidden + ' class="f2b-ban-card" style="background:rgba(239,83,80,0.08);border:1px solid rgba(239,83,80,0.25);border-radius:10px;padding:10px 14px;min-width:180px;">';
             html += '<div style="font-family:\'Courier New\',monospace;font-weight:700;color:var(--accent-red);font-size:14px;margin-bottom:4px;">' + escHtml(d.ip) + '</div>';
             html += '<div style="font-size:11px;color:var(--text-secondary);">Jail: <span style="color:var(--accent-cyan)">' + escHtml(d.jail) + '</span></div>';
             html += '<div style="font-size:11px;color:var(--text-secondary);">封禁: ' + escHtml(d.time) + '</div>';
@@ -3370,6 +3373,9 @@ function renderFail2Ban(f2b) {
             html += '</div>';
         });
         html += '</div>';
+        if (total > showCount) {
+            html += '<button id="f2bShowMoreBtn" onclick="toggleF2bBanCards()" style="margin-top:8px;background:transparent;border:1px solid var(--border-color);border-radius:6px;color:var(--accent-cyan);font-size:12px;padding:4px 14px;cursor:pointer;">显示更多（+' + (total - showCount) + '）</button>';
+        }
     }
 
     // 手动封禁输入
@@ -3385,6 +3391,15 @@ function renderFail2Ban(f2b) {
 
     // 加载封禁历史
     loadF2bHistory();
+}
+
+function toggleF2bBanCards() {
+    var extras = document.querySelectorAll('[data-f2b-extra]');
+    var btn = document.getElementById('f2bShowMoreBtn');
+    if (!extras.length || !btn) return;
+    var showing = extras[0].style.display !== 'none';
+    extras.forEach(function(el){ el.style.display = showing ? 'none' : ''; });
+    btn.textContent = showing ? '显示更多（+' + extras.length + '）' : '收起';
 }
 
 function toggleF2bHistory(btn) {
@@ -3919,6 +3934,9 @@ function renderServiceCard(svc) {
     let roleTag = '';
     if (svc.port_role === 'gateway') {
         roleTag = '<span class="role-tag role-gateway">认证代理</span>';
+        if (svc.backend_offline) {
+            roleTag += '<span class="role-tag" style="background:rgba(239,83,80,0.15);color:var(--accent-red);border-color:rgba(239,83,80,0.3);">后端已离线</span>';
+        }
     } else if (svc.port_role === 'auth_service') {
         roleTag = '<span class="role-tag role-auth">认证服务</span>';
     }
@@ -3941,7 +3959,12 @@ function renderServiceCard(svc) {
 
     // Footer
     let footerHtml = '';
-    if (svc.port_role === 'gateway') {
+    if (svc.port_role === 'gateway' && svc.backend_offline) {
+        footerHtml = `<div class="svc-card-footer" style="display:flex;gap:8px;align-items:center;">
+            <span style="font-size:12px;color:var(--accent-red);">后端服务已停止，代理端口可清理</span>
+            <button class="svc-btn" style="background:var(--accent-red);color:#fff;border:none;cursor:pointer;padding:4px 12px;border-radius:6px;font-size:12px;" onclick="cleanupGatewayProxy(${svc.proxy_target})">清理代理</button>
+        </div>`;
+    } else if (svc.port_role === 'gateway') {
         footerHtml = `<div class="svc-card-footer">
             <span class="svc-btn svc-btn-disabled">iptables 自动重定向 (无需直接访问)</span>
         </div>`;
@@ -4093,8 +4116,14 @@ function loadPortProtection() {
     Promise.all([
         fetch(GW_API + '/api/gateway/ports').then(r => r.json()),
         fetch(GW_API + '/api/unprotected-ports').then(r => r.json()),
-    ]).then(([protData, unprotData]) => {
-        renderProtectedPorts(protData.ports || []);
+        fetch('/api/data?range=7d', {credentials: 'include'}).then(r => r.json()).catch(() => null),
+    ]).then(([protData, unprotData, dashData]) => {
+        // 构建当前监听端口集合，用于检测已保护但服务已停止的端口
+        var listeningPorts = new Set();
+        if (dashData && dashData.ports) {
+            dashData.ports.forEach(function(p){ listeningPorts.add(parseInt(p.port)); });
+        }
+        renderProtectedPorts(protData.ports || [], listeningPorts);
         _unprotectedPortsCache = unprotData.ports || [];
         renderUnprotectedPorts(_unprotectedPortsCache);
     }).catch(() => {
@@ -4108,7 +4137,7 @@ function loadPortProtection() {
 // 需要账号密码登录的端口（不可从网关移除）
 var BASIC_AUTH_PORTS = {5000: '安全监控看板', 8502: 'SecGate AI 安全助手'};
 
-function renderProtectedPorts(ports) {
+function renderProtectedPorts(ports, listeningPorts) {
     const container = document.getElementById('protectedPortsChips');
     if (ports.length === 0) {
         container.innerHTML = '<span style="color:var(--text-secondary);font-size:13px;">暂无受保护端口</span>';
@@ -4116,11 +4145,20 @@ function renderProtectedPorts(ports) {
     }
     container.innerHTML = ports.map(p => {
         const isBasicAuth = BASIC_AUTH_PORTS[p.port];
+        const isAlive = !listeningPorts || listeningPorts.size === 0 || listeningPorts.has(p.port);
         if (isBasicAuth) {
             return `<div class="port-chip port-chip-protected" style="border-color:var(--accent-purple);">
                 <b>:${p.port}</b>
                 <span class="port-chip-name">${escHtml(p.comment || p.type)}</span>
                 <span class="badge badge-info" style="font-size:11px;padding:1px 6px;">账号密码保护</span>
+            </div>`;
+        }
+        if (!isAlive) {
+            return `<div class="port-chip" style="border-color:var(--accent-red);background:rgba(239,83,80,0.06);">
+                <b style="color:var(--accent-red);">:${p.port}</b>
+                <span class="port-chip-name">${escHtml(p.comment || p.type)}</span>
+                <span class="badge badge-danger" style="font-size:10px;padding:1px 6px;">服务已停止</span>
+                <button class="port-chip-btn port-chip-btn-remove" onclick="removePortProtection(${p.port})">清理</button>
             </div>`;
         }
         return `<div class="port-chip port-chip-protected">
@@ -4236,6 +4274,25 @@ function removePortProtection(port) {
         }
     })
     .catch(() => showPortStatus('请求失败，请检查网络', 'red'));
+}
+
+function cleanupGatewayProxy(backendPort) {
+    if (!confirm(`后端端口 ${backendPort} 已停止运行。\n确认清理其网关代理配置？`)) return;
+
+    fetch(GW_API + '/api/gateway/ports/' + backendPort, {
+        method: 'DELETE',
+    })
+    .then(r => r.json().then(d => ({status: r.status, data: d})))
+    .then(({status, data}) => {
+        if (status >= 400) {
+            alert('清理失败: ' + (data.error || '未知错误'));
+        } else {
+            alert(`端口 ${backendPort} 的代理配置已清理`);
+            refreshData();  // 刷新服务列表
+            loadPortProtection();  // 刷新端口保护列表
+        }
+    })
+    .catch(() => alert('请求失败，请检查网络'));
 }
 
 function renderTokens(tokens) {
