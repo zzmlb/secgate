@@ -87,6 +87,8 @@ pip install secgate
 sudo secgate setup
 ```
 
+> 如果 `secgate` 命令未找到，可使用备选方式：`sudo python3 -m secgate_pkg setup`
+
 ### setup 自动完成的事项
 
 `secgate setup` 一条命令自动完成全部配置，无需人工干预：
