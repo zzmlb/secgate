@@ -35,6 +35,8 @@ rsync -a \
     --exclude='*-discussion' \
     --exclude='.pids.json' \
     --exclude='.credentials.json' \
+    --exclude='gateway/config.json' \
+    --exclude='agent/.env' \
     --exclude='dashboard/data' \
     --exclude='scanner/data' \
     --exclude='.files' \
