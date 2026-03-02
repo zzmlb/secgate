@@ -330,10 +330,14 @@ pip install --upgrade secgate
 ## 卸载
 
 ```bash
-sudo bash /opt/secgate/packaging/uninstall.sh
+sudo secgate uninstall
 ```
 
-卸载时会询问是否保留配置和数据文件。
+卸载程序会自动完成以下清理：
+- 停止并删除 systemd 服务
+- 清理 iptables / Nginx / UFW / Fail2Ban 配置
+- 可选择备份凭证和数据文件到 `/tmp/secgate-backup-<时间戳>/`
+- 清理日志和安装目录（Git 仓库需手动删除）
 
 ## 资源占用
 

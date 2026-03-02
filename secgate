@@ -10,6 +10,7 @@
     secgate setup          首次部署（安装依赖 + 配置 Nginx/iptables/UFW + systemd）
     secgate version        查看版本号
     secgate update         更新到最新版本
+    secgate uninstall      卸载 SecGate 并清理所有系统配置
 """
 
 import os
@@ -271,6 +272,175 @@ def cmd_set_apikey():
     print()
 
 
+def cmd_uninstall():
+    """卸载 SecGate 并清理所有系统配置"""
+    # 确认提示
+    if sys.stdin.isatty():
+        answer = input("确定要卸载 SecGate 并清理所有系统配置吗？[y/N] ").strip()
+        if answer.lower() != "y":
+            print("已取消卸载。")
+            return
+    else:
+        print("[错误] 卸载命令需要交互式终端确认，请直接运行: sudo secgate uninstall")
+        sys.exit(1)
+
+    print()
+    print("=" * 50)
+    print("  SecGate 卸载程序")
+    print("=" * 50)
+
+    # [1/8] 停止所有服务
+    print("\n[1/8] 停止所有服务...")
+    cmd_stop()
+    # 同时停止 systemd 管理的服务
+    for svc in ["secgate", "secgate-dashboard", "secgate-gateway"]:
+        subprocess.run(["systemctl", "stop", svc], capture_output=True)
+
+    # [2/8] 删除 systemd 服务文件
+    print("\n[2/8] 清理 systemd 服务...")
+    service_files = [
+        "/etc/systemd/system/secgate.service",
+        "/etc/systemd/system/secgate-dashboard.service",
+        "/etc/systemd/system/secgate-gateway.service",
+    ]
+    for sf in service_files:
+        if os.path.exists(sf):
+            subprocess.run(["systemctl", "disable", os.path.basename(sf).replace(".service", "")], capture_output=True)
+            os.remove(sf)
+            print(f"  已删除 {sf}")
+    subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
+
+    # [3/8] 清理 iptables 规则
+    print("\n[3/8] 清理 iptables 规则...")
+    # 检查 GATEWAY_AUTH 链是否存在
+    r = subprocess.run(
+        ["iptables", "-t", "nat", "-L", "GATEWAY_AUTH", "-n"],
+        capture_output=True,
+    )
+    if r.returncode == 0:
+        subprocess.run(["iptables", "-t", "nat", "-D", "PREROUTING", "-j", "GATEWAY_AUTH"], capture_output=True)
+        subprocess.run(["iptables", "-t", "nat", "-F", "GATEWAY_AUTH"], capture_output=True)
+        subprocess.run(["iptables", "-t", "nat", "-X", "GATEWAY_AUTH"], capture_output=True)
+        print("  已清理 GATEWAY_AUTH 链")
+    else:
+        print("  GATEWAY_AUTH 链不存在，跳过")
+
+    # [4/8] 清理 Nginx 配置
+    print("\n[4/8] 清理 Nginx 配置...")
+    from shared import NGINX_CONF_PATH, NGINX_ENABLED_PATH
+    for p in [NGINX_ENABLED_PATH, NGINX_CONF_PATH]:
+        if os.path.exists(p) or os.path.islink(p):
+            os.remove(p)
+            print(f"  已删除 {p}")
+    # 如果 nginx 在运行则 reload
+    r = subprocess.run(["pgrep", "nginx"], capture_output=True)
+    if r.returncode == 0:
+        subprocess.run(["nginx", "-s", "reload"], capture_output=True)
+        print("  已重载 Nginx")
+
+    # [5/8] 清理 UFW 规则
+    print("\n[5/8] 清理 UFW 规则...")
+    gw_config_path = os.path.join(PROJECT_DIR, "gateway", "config.json")
+    ufw_ports_to_remove = ["5002"]
+    if os.path.exists(gw_config_path):
+        try:
+            with open(gw_config_path) as f:
+                cfg = json.load(f)
+            for port_str, info in cfg.get("protected_ports", {}).items():
+                ufw_ports_to_remove.append(port_str)
+                nginx_port = str(info.get("nginx_port", int(port_str) + 20000))
+                ufw_ports_to_remove.append(nginx_port)
+        except Exception:
+            pass
+    for port in ufw_ports_to_remove:
+        r = subprocess.run(["ufw", "delete", "allow", port + "/tcp"], capture_output=True)
+        if r.returncode == 0:
+            print(f"  已删除 UFW 规则: {port}/tcp")
+    print("  已保留 22/tcp (SSH)")
+
+    # [6/8] 清理 Fail2Ban 配置
+    print("\n[6/8] 清理 Fail2Ban 配置...")
+    f2b_jail_local = "/etc/fail2ban/jail.local"
+    if os.path.exists(f2b_jail_local):
+        os.remove(f2b_jail_local)
+        print("  已删除 /etc/fail2ban/jail.local")
+        subprocess.run(["systemctl", "restart", "fail2ban"], capture_output=True)
+        print("  已重启 Fail2Ban")
+    else:
+        print("  jail.local 不存在，跳过")
+
+    # [7/8] 询问是否保留数据
+    keep_data = False
+    if sys.stdin.isatty():
+        answer = input("\n[7/8] 是否保留配置和数据文件？[Y/n] ").strip()
+        keep_data = answer.lower() != "n"
+    else:
+        keep_data = True
+
+    if keep_data:
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_dir = f"/tmp/secgate-backup-{timestamp}"
+        os.makedirs(backup_dir, exist_ok=True)
+        backup_items = [
+            (os.path.join(PROJECT_DIR, ".credentials.json"), "credentials.json"),
+            (os.path.join(PROJECT_DIR, "gateway", "config.json"), "gateway-config.json"),
+        ]
+        for src, dst_name in backup_items:
+            if os.path.exists(src):
+                shutil.copy2(src, os.path.join(backup_dir, dst_name))
+        for dir_name in ["dashboard/data", "scanner/data"]:
+            src_dir = os.path.join(PROJECT_DIR, dir_name)
+            if os.path.isdir(src_dir):
+                shutil.copytree(src_dir, os.path.join(backup_dir, dir_name.replace("/", "-")))
+        print(f"  数据已备份到: {backup_dir}")
+    else:
+        print("\n[7/8] 跳过数据备份")
+
+    # [8/8] 清理文件
+    print("\n[8/8] 清理文件...")
+    # 删除日志
+    log_dir = "/var/log/secgate"
+    if os.path.isdir(log_dir):
+        shutil.rmtree(log_dir)
+        print(f"  已删除 {log_dir}")
+    # 删除临时日志
+    import glob as _glob
+    for f in _glob.glob("/tmp/secgate-*.log"):
+        os.remove(f)
+        print(f"  已删除 {f}")
+    # 删除软链接
+    symlink = "/usr/local/bin/secgate"
+    if os.path.islink(symlink):
+        os.remove(symlink)
+        print(f"  已删除 {symlink}")
+    # 删除 PID 文件
+    if os.path.exists(PID_FILE):
+        os.remove(PID_FILE)
+    # pip uninstall（静默）
+    subprocess.run(["pip", "uninstall", "secgate", "-y"], capture_output=True)
+
+    # 判断安装方式并清理目录
+    is_git_repo = os.path.exists(os.path.join(PROJECT_DIR, ".git"))
+    if is_git_repo:
+        print(f"\n  检测到 Git 仓库，不自动删除项目目录。")
+        print(f"  如需删除请手动执行: rm -rf {PROJECT_DIR}")
+    elif PROJECT_DIR.startswith("/opt/secgate"):
+        shutil.rmtree(PROJECT_DIR, ignore_errors=True)
+        print(f"  已删除 {PROJECT_DIR}")
+    else:
+        print(f"\n  项目目录: {PROJECT_DIR}")
+        print(f"  如需删除请手动执行: rm -rf {PROJECT_DIR}")
+
+    print()
+    print("=" * 50)
+    print("  SecGate 已卸载完成")
+    if keep_data:
+        print(f"  备份位置: {backup_dir}")
+    print("=" * 50)
+    print()
+
+
 def cmd_setup():
     """首次部署：安装依赖 + 配置系统"""
     print("=" * 50)
@@ -460,6 +630,7 @@ COMMANDS = {
     "setup": cmd_setup,
     "version": cmd_version,
     "update": cmd_update,
+    "uninstall": cmd_uninstall,
     "set-apikey": cmd_set_apikey,
 }
 
@@ -478,6 +649,7 @@ SecGate - 安全网关一体化管理工具
     set-apikey     配置 AI 助手（提示去 Dashboard 设置）
     version        查看版本号
     update         更新到最新版本
+    uninstall      卸载 SecGate 并清理所有系统配置
 
 快速开始:
     git clone https://github.com/zzmlb/secgate.git /opt/secgate

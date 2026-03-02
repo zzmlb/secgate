@@ -256,8 +256,14 @@ Credentials and data files are automatically backed up during upgrade.
 ## Uninstall
 
 ```bash
-sudo bash /opt/secgate/packaging/uninstall.sh
+sudo secgate uninstall
 ```
+
+The uninstaller will automatically:
+- Stop and remove systemd services
+- Clean up iptables / Nginx / UFW / Fail2Ban configurations
+- Optionally back up credentials and data to `/tmp/secgate-backup-<timestamp>/`
+- Remove logs and installation directory (Git repos require manual removal)
 
 ## License
 
