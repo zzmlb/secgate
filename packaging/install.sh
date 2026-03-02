@@ -104,7 +104,8 @@ fi
 # 设置权限
 chmod +x "$INSTALL_DIR/secgate"
 
-# 创建软链接
+# 创建软链接（先清理 pip 可能安装的同名脚本或断裂软链接）
+rm -f "$SYMLINK" 2>/dev/null || true
 ln -sf "$INSTALL_DIR/secgate" "$SYMLINK"
 info "已创建命令: $SYMLINK"
 
