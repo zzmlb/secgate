@@ -2,14 +2,20 @@
 set -euo pipefail
 
 # 构建 SecGate pip 包
-# 用法: bash packaging/build-pip.sh
+# 用法: bash packaging/build-pip.sh [--upload]
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PKG_PROJECT_DIR="$PROJECT_DIR/src/secgate_pkg/project"
+VERSION=$(cat "$PROJECT_DIR/VERSION")
+UPLOAD=false
+
+if [[ "${1:-}" == "--upload" ]]; then
+    UPLOAD=true
+fi
 
 echo "=========================================="
-echo "  构建 SecGate pip 包"
+echo "  构建 SecGate pip 包 v${VERSION}"
 echo "=========================================="
 
 # 清理旧文件
@@ -38,6 +44,8 @@ rsync -a \
     --exclude='pyproject.toml' \
     --exclude='MANIFEST.in' \
     --exclude='packaging' \
+    --exclude='.chainlit' \
+    --exclude='.claude' \
     "$PROJECT_DIR/" "$PKG_PROJECT_DIR/"
 
 echo "项目文件已复制到 $PKG_PROJECT_DIR"
@@ -54,6 +62,18 @@ rm -rf "$PKG_PROJECT_DIR"
 
 echo ""
 echo "构建完成:"
-ls -la "$PROJECT_DIR/dist/"
+ls -lh "$PROJECT_DIR/dist/"
 echo ""
-echo "安装测试: pip install dist/secgate-*.tar.gz"
+
+if [[ "$UPLOAD" == "true" ]]; then
+    pip3 install -q twine 2>/dev/null || pip install -q twine
+    echo "上传到 PyPI..."
+    twine upload "$PROJECT_DIR/dist/"*
+    echo ""
+    echo "发布成功! 用户可通过以下命令安装:"
+    echo "  pip install secgate"
+    echo "  sudo secgate setup"
+else
+    echo "本地测试: pip install dist/secgate-${VERSION}.tar.gz"
+    echo "上传 PyPI: bash packaging/build-pip.sh --upload"
+fi

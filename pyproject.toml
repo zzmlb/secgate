@@ -4,11 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secgate"
-version = "1.0.0"
-description = "Linux 服务器安全网关管理平台"
+dynamic = ["version"]
+description = "All-in-one Linux server security gateway: auth gateway + attack monitoring + vulnerability scanning + AI assistant in ~120MB RAM"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
+authors = [
+    {name = "zzmlb", email = "zzmlb@users.noreply.github.com"},
+]
+keywords = ["security", "gateway", "firewall", "fail2ban", "linux", "server", "monitoring", "vulnerability-scanner"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -16,6 +20,10 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Security",
     "Topic :: System :: Systems Administration",
 ]
@@ -31,8 +39,16 @@ dependencies = [
 [project.optional-dependencies]
 agent = ["chainlit>=2.0"]
 
+[project.urls]
+Homepage = "https://github.com/zzmlb/secgate"
+Repository = "https://github.com/zzmlb/secgate"
+Issues = "https://github.com/zzmlb/secgate/issues"
+
 [project.scripts]
 secgate = "secgate_pkg.cli:main"
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
