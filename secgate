@@ -251,10 +251,8 @@ def cmd_update():
         subprocess.run(["git", "pull"], cwd=PROJECT_DIR, check=True)
 
     # 更新依赖
-    req_file = os.path.join(PROJECT_DIR, "requirements.txt")
-    if os.path.exists(req_file):
-        print("[更新] 更新 Python 依赖...")
-        subprocess.run(["pip3", "install", "-q", "-r", req_file])
+    print("[更新] 更新 Python 依赖...")
+    _install_python_deps()
 
     print("[更新] 启动服务...")
     cmd_start()
@@ -441,6 +439,61 @@ def cmd_uninstall():
     print()
 
 
+# pip 包名 → apt 包名映射（核心依赖优先走 apt 安装，避免 PEP 668 报错）
+_APT_PKG_MAP = {
+    "flask": "python3-flask",
+    "psutil": "python3-psutil",
+    "requests": "python3-requests",
+    "itsdangerous": "python3-itsdangerous",
+    "pyyaml": "python3-yaml",
+    "gunicorn": "gunicorn",
+    "paramiko": "python3-paramiko",
+}
+
+
+def _install_python_deps():
+    """安装 Python 依赖，兼容 PEP 668 (externally-managed-environment)
+
+    策略：先用 apt 安装有对应包的依赖，剩余的用 pip3 --break-system-packages 安装
+    """
+    req_file = os.path.join(PROJECT_DIR, "requirements.txt")
+    if not os.path.exists(req_file):
+        return
+
+    # 解析 requirements.txt 中的包名
+    pip_only = []
+    with open(req_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            pkg_name = line.split(">=")[0].split("==")[0].split("<")[0].strip().lower()
+            apt_pkg = _APT_PKG_MAP.get(pkg_name)
+            if apt_pkg:
+                r = subprocess.run(["dpkg", "-s", apt_pkg], capture_output=True)
+                if r.returncode != 0:
+                    print(f"  apt install {apt_pkg}...")
+                    subprocess.run(
+                        ["apt-get", "install", "-y", "-qq", apt_pkg],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+                else:
+                    print(f"  {apt_pkg} 已安装")
+            else:
+                pip_only.append(line)
+
+    # 剩余包用 pip 安装（如 chainlit 等 apt 没有的）
+    if pip_only:
+        cmd = ["pip3", "install", "-q"] + pip_only
+        r = subprocess.run(cmd, capture_output=True)
+        if r.returncode != 0:
+            # PEP 668: 加 --break-system-packages 重试
+            print("  pip 受限，使用 --break-system-packages 重试...")
+            cmd = ["pip3", "install", "-q", "--break-system-packages"] + pip_only
+            subprocess.run(cmd, stdout=subprocess.DEVNULL)
+    print("  Python 依赖安装完成")
+
+
 def cmd_setup():
     """首次部署：安装依赖 + 配置系统"""
     print("=" * 50)
@@ -468,11 +521,7 @@ def cmd_setup():
 
     # 3. 安装 Python 依赖
     print("\n[3/6] 安装 Python 依赖...")
-    subprocess.run(
-        ["pip3", "install", "-q", "-r", os.path.join(PROJECT_DIR, "requirements.txt")],
-        stdout=subprocess.DEVNULL,
-    )
-    print("  Python 依赖安装完成")
+    _install_python_deps()
 
     # 4. 生成凭证
     print("\n[4/6] 生成安全凭证...")

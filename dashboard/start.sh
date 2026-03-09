@@ -18,7 +18,7 @@ fi
 # 检查依赖
 if ! python3 -c "import flask" 2>/dev/null; then
     echo "[*] 安装Python依赖..."
-    pip install -r requirements.txt
+    pip install -r requirements.txt 2>/dev/null || pip install --break-system-packages -r requirements.txt
 fi
 
 # 杀掉已有的看板进程

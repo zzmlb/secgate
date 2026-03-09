@@ -37,6 +37,7 @@ rsync -a \
     --exclude='security-plan.md' \
     --exclude='dashboard/data' \
     --exclude='scanner/data' \
+    --exclude='master/data' \
     --exclude='.claude' \
     --exclude='.chainlit' \
     --exclude='.files' \

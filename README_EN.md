@@ -20,6 +20,7 @@ curl -fsSL https://github.com/zzmlb/secgate/releases/latest/download/install.sh 
 | Vuln Scanning | - | - | **5 built-in scanners** | - / Paid | Yes |
 | Threat Score | - | Yes | **4-dimension scoring** | - | Yes |
 | AI Assistant | - | - | **Built-in** | - | - |
+| Multi-node Management | - | - | **SSH centralized** | - | Yes |
 | Alert Engine | - | Yes | **8 auto rules** | - | Yes |
 | Deployment | apt install | + Bouncer setup | **1 command, fully auto** | Install script | Multi-component tuning |
 | Runs on 1C/1G | Yes | Barely | **Yes** | No | No |
@@ -34,6 +35,7 @@ curl -fsSL https://github.com/zzmlb/secgate/releases/latest/download/install.sh 
 | **Fully automated setup** | 1 command configures Nginx / UFW / Fail2Ban / iptables / systemd — 10 steps, zero manual editing |
 | **Threat posture scoring** | SSH brute force + port scanning + web attacks + defense effectiveness — 4-dimension log-weighted 0-100 score for instant security assessment |
 | **AI security module** | 15+ AI provider key detection, 14 AI service auto-discovery, conversational security assistant — unique among open-source tools |
+| **Multi-node management** | Manage multiple servers via SSH, auto-detect SecGate installation and running ports, single dashboard for all nodes |
 | **Works with bare IP** | No domain required. Cloudflare / Pangolin require domains; SecGate protects bare IP servers directly |
 | **Minimal attack surface** | 5,000 lines Python + 4,000 lines frontend — far smaller than admin panels (BT Panel / CyberPanel have had critical RCE and ransomware exploits) |
 
@@ -65,9 +67,9 @@ curl -fsSL https://github.com/zzmlb/secgate/releases/latest/download/install.sh 
 |:---:|:---:|
 | ![Gateway](docs/screenshots/gateway-auth.png) | ![Scan](docs/screenshots/security-scan.png) |
 
-| AI Security — Service Discovery & API Key Detection |
-|:---:|
-| ![AI Security](docs/screenshots/ai-security.png) |
+| AI Security — Service Discovery & API Key Detection | Node Management — Multi-node Control |
+|:---:|:---:|
+| ![AI Security](docs/screenshots/ai-security.png) | ![Node Management](docs/screenshots/master-node.png) |
 
 ## Requirements
 
@@ -200,6 +202,13 @@ AI service security management and conversational assistant:
 - **API Keys** — Scan and display AI API keys from env vars and config files (redacted)
 - **Risk Assessment** — High / medium / low risk breakdown with detailed findings
 - **AI Assistant** — Natural language security Q&A powered by Claude Code CLI (read-only, dual auth)
+
+### Tab 6: Node Management
+
+Centrally manage multiple SecGate nodes via SSH:
+- **Node Overview** — Total / online / offline / SecGate-installed counts. SecGate node cards with version, service status, clickable links. Full node table with test, detect, edit, delete actions
+- **Add Node** — Three auth methods: key file (auto-detect from ~/.ssh/), password, paste private key content. Test connection before saving. Edit existing nodes with masked credentials
+- **SecGate Detection** — 5-step read-only strategy: VERSION file → secgate status → PID-to-port lookup → systemd fallback → curl port probe. Auto-discovers actual Dashboard and Gateway ports without hardcoding
 
 ### Alert Engine (8 Auto Rules)
 

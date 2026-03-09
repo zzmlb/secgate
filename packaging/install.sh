@@ -56,6 +56,7 @@ if [[ -d "$INSTALL_DIR" ]]; then
     done
     [[ -d "$INSTALL_DIR/dashboard/data" ]] && cp -r "$INSTALL_DIR/dashboard/data" "$BACKUP_DIR/dashboard-data" && info "  备份 dashboard/data/"
     [[ -d "$INSTALL_DIR/scanner/data" ]] && cp -r "$INSTALL_DIR/scanner/data" "$BACKUP_DIR/scanner-data" && info "  备份 scanner/data/"
+    [[ -d "$INSTALL_DIR/master/data" ]] && cp -r "$INSTALL_DIR/master/data" "$BACKUP_DIR/master-data" && info "  备份 master/data/"
     # 停止服务
     [[ -f "$INSTALL_DIR/secgate" ]] && python3 "$INSTALL_DIR/secgate" stop 2>/dev/null || true
 fi
@@ -74,7 +75,7 @@ if ! curl -fsSL -o "$TMP_TAR" "$DOWNLOAD_URL"; then
             rsync -a --exclude='__pycache__' --exclude='.git' --exclude='dist' --exclude='build' \
                   --exclude='*.egg-info' --exclude='*-discussion' --exclude='.pids.json' \
                   --exclude='.credentials.json' --exclude='gateway/config.json' \
-                  --exclude='dashboard/data' --exclude='scanner/data' \
+                  --exclude='dashboard/data' --exclude='scanner/data' --exclude='master/data' \
                   --exclude='.claude' --exclude='.chainlit' \
                   "$SCRIPT_DIR/" "$INSTALL_DIR/"
         else
@@ -98,6 +99,7 @@ if [[ -d "$BACKUP_DIR" ]]; then
     [[ -f "$BACKUP_DIR/.env" ]] && mkdir -p "$INSTALL_DIR/agent" && cp "$BACKUP_DIR/.env" "$INSTALL_DIR/agent/"
     [[ -d "$BACKUP_DIR/dashboard-data" ]] && mkdir -p "$INSTALL_DIR/dashboard" && cp -r "$BACKUP_DIR/dashboard-data" "$INSTALL_DIR/dashboard/data"
     [[ -d "$BACKUP_DIR/scanner-data" ]] && mkdir -p "$INSTALL_DIR/scanner" && cp -r "$BACKUP_DIR/scanner-data" "$INSTALL_DIR/scanner/data"
+    [[ -d "$BACKUP_DIR/master-data" ]] && mkdir -p "$INSTALL_DIR/master" && cp -r "$BACKUP_DIR/master-data" "$INSTALL_DIR/master/data"
     rm -rf "$BACKUP_DIR"
 fi
 
