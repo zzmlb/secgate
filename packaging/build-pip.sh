@@ -39,6 +39,7 @@ rsync -a \
     --exclude='agent/.env' \
     --exclude='dashboard/data' \
     --exclude='scanner/data' \
+    --exclude='master/data' \
     --exclude='.files' \
     --exclude='src' \
     --exclude='secgate_pkg' \
