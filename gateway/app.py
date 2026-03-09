@@ -504,6 +504,8 @@ def add_port():
     all_used = existing_nginx_ports | set(int(p) for p in cfg.get("protected_ports", {}).keys())
     while nginx_port in all_used:
         nginx_port += 1
+    if nginx_port > 65535:
+        return jsonify({"error": f"无法分配代理端口（计算值 {nginx_port} 超出 65535）"}), 400
 
     cfg = load_config()
     port_str = str(port)
@@ -574,6 +576,8 @@ def add_ports_batch():
         all_used = existing_nginx_ports | set(int(p) for p in cfg.get("protected_ports", {}).keys())
         while nginx_port in all_used:
             nginx_port += 1
+        if nginx_port > 65535:
+            continue
         comment = item.get("comment", "")
 
         cfg["protected_ports"][port_str] = {
