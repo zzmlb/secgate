@@ -132,8 +132,11 @@ def sync_iptables():
         subprocess.Popen(["bash", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def apply_gateway_changes():
-    """端口保护变更后重新生成 Nginx 配置并同步 iptables，返回 (ok, error_msg)"""
+def apply_gateway_changes(changed_ports=None):
+    """端口保护变更后重新生成 Nginx 配置并同步 iptables，返回 (ok, error_msg)
+
+    changed_ports: [(port_str, nginx_port_str), ...] 仅同步指定端口的 UFW 规则，None 则全量
+    """
     # 1. 生成 Nginx 配置
     gen_script = os.path.join(GATEWAY_DIR, "generate-nginx.py")
     try:
@@ -171,11 +174,22 @@ def apply_gateway_changes():
     # 4. 同步 iptables
     sync_iptables()
 
-    # 5. 同步 UFW 规则（放行受保护端口及其 Nginx 代理端口）
+    # 5. 同步 UFW 规则（仅新增端口，避免全量刷导致超时）
+    _sync_ufw_for_ports(changed_ports)
+
+    return True, ""
+
+
+def _sync_ufw_for_ports(ports=None):
+    """同步 UFW 规则。ports 为 [(port_str, nginx_port_str), ...] 列表，为 None 时全量同步"""
     try:
-        cfg = load_config()
-        for port_str, info in cfg.get("protected_ports", {}).items():
-            nginx_port = str(info.get("nginx_port", int(port_str) + 20000))
+        if ports is None:
+            cfg = load_config()
+            ports = [
+                (p, str(info.get("nginx_port", int(p) + 20000)))
+                for p, info in cfg.get("protected_ports", {}).items()
+            ]
+        for port_str, nginx_port in ports:
             subprocess.run(
                 ["ufw", "allow", port_str + "/tcp"],
                 capture_output=True, timeout=5,
@@ -186,8 +200,6 @@ def apply_gateway_changes():
             )
     except Exception:
         pass  # UFW 同步失败不影响核心功能
-
-    return True, ""
 
 
 TRUSTED_LOCAL = {"127.0.0.1", "::1", detect_public_ip()}
@@ -548,8 +560,8 @@ def add_port():
     }
     save_config(cfg)
 
-    # 应用变更
-    ok, err = apply_gateway_changes()
+    # 应用变更（仅同步当前端口的 UFW 规则）
+    ok, err = apply_gateway_changes([(port_str, str(nginx_port))])
     if not ok:
         # 回滚
         del cfg["protected_ports"][port_str]
@@ -608,22 +620,23 @@ def add_ports_batch():
             "type": port_type,
             "comment": comment,
         }
-        added.append(port)
+        added.append((port, nginx_port))
 
     if not added:
         return jsonify({"error": "没有可添加的端口"}), 400
 
     save_config(cfg)
 
-    # 应用变更
-    ok, err = apply_gateway_changes()
+    # 应用变更（仅同步新增端口的 UFW 规则）
+    ufw_ports = [(str(p), str(np)) for p, np in added]
+    ok, err = apply_gateway_changes(ufw_ports)
     if not ok:
         # 回滚
         cfg["protected_ports"] = json.loads(backup)
         save_config(cfg)
         return jsonify({"error": f"应用配置失败: {err}"}), 500
 
-    return jsonify({"ok": True, "added": added, "count": len(added)})
+    return jsonify({"ok": True, "added": [p for p, _ in added], "count": len(added)})
 
 
 @app.route("/auth/api/ports/<int:port>", methods=["DELETE"])
@@ -642,8 +655,8 @@ def remove_port(port):
     backup = cfg["protected_ports"].pop(port_str)
     save_config(cfg)
 
-    # 应用变更
-    ok, err = apply_gateway_changes()
+    # 应用变更（删除无需新增 UFW 规则）
+    ok, err = apply_gateway_changes([])
     if not ok:
         # 回滚
         cfg["protected_ports"][port_str] = backup

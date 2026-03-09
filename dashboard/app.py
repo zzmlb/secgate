@@ -2210,11 +2210,11 @@ def proxy_gateway(path):
     url = f"{GATEWAY_URL}/auth/api/{path}"
     try:
         if request.method == "GET":
-            resp = http_requests.get(url, timeout=5)
+            resp = http_requests.get(url, timeout=10)
         elif request.method == "POST":
-            resp = http_requests.post(url, json=request.get_json(silent=True), timeout=5)
+            resp = http_requests.post(url, json=request.get_json(silent=True), timeout=30)
         elif request.method == "DELETE":
-            resp = http_requests.delete(url, timeout=5)
+            resp = http_requests.delete(url, timeout=30)
         return (resp.content, resp.status_code, {"Content-Type": "application/json"})
     except Exception as e:
         return jsonify({"error": str(e)}), 502
