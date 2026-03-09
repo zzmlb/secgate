@@ -54,6 +54,38 @@ GATEWAY_DIR = os.path.dirname(__file__)
 # 不允许保护的系统端口
 EXCLUDED_PORTS = {22, 53, 5002}
 
+# Nginx 代理端口分配范围
+_PROXY_PORT_MIN = 20000
+_PROXY_PORT_MAX = 65535
+
+
+def _allocate_nginx_port(port, cfg):
+    """为业务端口分配 Nginx 代理端口，保证不超 65535 且不冲突"""
+    existing_nginx = {
+        info.get("nginx_port", int(p) + 20000)
+        for p, info in cfg.get("protected_ports", {}).items()
+    }
+    all_used = existing_nginx | {int(p) for p in cfg.get("protected_ports", {}).keys()}
+
+    # 优先 port + 20000
+    candidate = port + 20000
+    if candidate <= _PROXY_PORT_MAX and candidate not in all_used:
+        return candidate
+
+    # 超限或冲突：从 _PROXY_PORT_MIN 起找空闲端口
+    candidate = max(_PROXY_PORT_MIN, min(candidate, _PROXY_PORT_MAX))
+    while candidate <= _PROXY_PORT_MAX and candidate in all_used:
+        candidate += 1
+    if candidate <= _PROXY_PORT_MAX:
+        return candidate
+
+    # 极端情况：反向搜索
+    for c in range(_PROXY_PORT_MAX, _PROXY_PORT_MIN - 1, -1):
+        if c not in all_used:
+            return c
+    return None
+
+
 # 默认受保护端口（Dashboard + AI 助手，其余由用户通过管理页面添加）
 DEFAULT_PROTECTED_PORTS = {
     "5000": {"nginx_port": 25000, "type": "standard", "comment": "安全监控看板"},
@@ -487,8 +519,8 @@ def add_port():
         return jsonify({"error": "端口号无效"}), 400
     if port in EXCLUDED_PORTS:
         return jsonify({"error": f"端口 {port} 为系统保留端口，不可保护"}), 400
-    # 检查该端口是否已被其他端口用作 Nginx 代理端口
     cfg = load_config()
+    # 检查该端口是否已被其他端口用作 Nginx 代理端口
     existing_nginx_ports = {
         info.get("nginx_port", int(p) + 20000)
         for p, info in cfg.get("protected_ports", {}).items()
@@ -499,15 +531,9 @@ def add_port():
     comment = data.get("comment", "")
     is_chainlit = data.get("is_chainlit", False)
     port_type = "chainlit" if is_chainlit else "standard"
-    nginx_port = port + 20000
-    # 如果计算出的代理端口与已有业务端口或代理端口冲突，自动偏移
-    all_used = existing_nginx_ports | set(int(p) for p in cfg.get("protected_ports", {}).keys())
-    while nginx_port in all_used:
-        nginx_port += 1
-    if nginx_port > 65535:
-        return jsonify({"error": f"无法分配代理端口（计算值 {nginx_port} 超出 65535）"}), 400
-
-    cfg = load_config()
+    nginx_port = _allocate_nginx_port(port, cfg)
+    if nginx_port is None:
+        return jsonify({"error": "无法分配可用的代理端口"}), 400
     port_str = str(port)
     if port_str in cfg.get("protected_ports", {}):
         return jsonify({"error": f"端口 {port} 已在保护列表中"}), 409
@@ -572,11 +598,8 @@ def add_ports_batch():
 
         is_chainlit = item.get("is_chainlit", False)
         port_type = "chainlit" if is_chainlit else "standard"
-        nginx_port = port + 20000
-        all_used = existing_nginx_ports | set(int(p) for p in cfg.get("protected_ports", {}).keys())
-        while nginx_port in all_used:
-            nginx_port += 1
-        if nginx_port > 65535:
+        nginx_port = _allocate_nginx_port(port, cfg)
+        if nginx_port is None:
             continue
         comment = item.get("comment", "")
 
