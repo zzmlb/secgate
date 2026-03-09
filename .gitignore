@@ -8,6 +8,10 @@ security-plan.md
 # 数据目录
 dashboard/data/
 scanner/data/
+master/data/
+
+# Chainlit
+.chainlit/
 
 # Python
 __pycache__/

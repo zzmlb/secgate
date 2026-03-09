@@ -487,13 +487,23 @@ def add_port():
         return jsonify({"error": "端口号无效"}), 400
     if port in EXCLUDED_PORTS:
         return jsonify({"error": f"端口 {port} 为系统保留端口，不可保护"}), 400
-    if port >= 20000:
-        return jsonify({"error": "20000+ 端口为 Nginx 代理端口范围，不可保护"}), 400
+    # 检查该端口是否已被其他端口用作 Nginx 代理端口
+    cfg = load_config()
+    existing_nginx_ports = {
+        info.get("nginx_port", int(p) + 20000)
+        for p, info in cfg.get("protected_ports", {}).items()
+    }
+    if port in existing_nginx_ports:
+        return jsonify({"error": f"端口 {port} 已被用作 Nginx 认证代理端口，不可保护"}), 400
 
     comment = data.get("comment", "")
     is_chainlit = data.get("is_chainlit", False)
     port_type = "chainlit" if is_chainlit else "standard"
     nginx_port = port + 20000
+    # 如果计算出的代理端口与已有业务端口或代理端口冲突，自动偏移
+    all_used = existing_nginx_ports | set(int(p) for p in cfg.get("protected_ports", {}).keys())
+    while nginx_port in all_used:
+        nginx_port += 1
 
     cfg = load_config()
     port_str = str(port)
@@ -545,7 +555,14 @@ def add_ports_batch():
             port = int(item.get("port", 0))
         except (ValueError, TypeError):
             continue
-        if port <= 0 or port > 65535 or port in EXCLUDED_PORTS or port >= 20000:
+        if port <= 0 or port > 65535 or port in EXCLUDED_PORTS:
+            continue
+        # 检查是否被用作 Nginx 代理端口
+        existing_nginx_ports = {
+            info.get("nginx_port", int(p) + 20000)
+            for p, info in cfg.get("protected_ports", {}).items()
+        }
+        if port in existing_nginx_ports:
             continue
         port_str = str(port)
         if port_str in cfg["protected_ports"]:
@@ -554,6 +571,9 @@ def add_ports_batch():
         is_chainlit = item.get("is_chainlit", False)
         port_type = "chainlit" if is_chainlit else "standard"
         nginx_port = port + 20000
+        all_used = existing_nginx_ports | set(int(p) for p in cfg.get("protected_ports", {}).keys())
+        while nginx_port in all_used:
+            nginx_port += 1
         comment = item.get("comment", "")
 
         cfg["protected_ports"][port_str] = {

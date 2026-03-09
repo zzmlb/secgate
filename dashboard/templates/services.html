@@ -1945,6 +1945,7 @@
         .main-tab-btn.active[data-color="green"] { background:linear-gradient(135deg,#66bb6a,#26c6da); color:#fff; box-shadow:0 2px 8px rgba(102,187,106,0.3); }
         .main-tab-btn.active[data-color="purple"] { background:linear-gradient(135deg,#ab47bc,#4fc3f7); color:#fff; box-shadow:0 2px 8px rgba(171,71,188,0.3); }
         .main-tab-btn.active[data-color="red"] { background:linear-gradient(135deg,#ef5350,#ffa726); color:#fff; box-shadow:0 2px 8px rgba(239,83,80,0.3); }
+        .main-tab-btn.active[data-color="yellow"] { background:linear-gradient(135deg,#ffa726,#ffca28); color:#1a1a2e; box-shadow:0 2px 8px rgba(255,167,38,0.3); }
         .main-tab-content { display:none; }
         .main-tab-content.active { display:block; }
         .sub-tab-bar { display:flex; gap:0; margin:20px 0; border-bottom:2px solid var(--border-color); }
@@ -1952,6 +1953,7 @@
         .sub-tab-btn:hover { color:var(--text-primary); }
         .sub-tab-blue .sub-tab-btn.active { color:#4fc3f7; border-bottom-color:#4fc3f7; }
         .sub-tab-red .sub-tab-btn.active { color:#ef5350; border-bottom-color:#ef5350; }
+        .sub-tab-yellow .sub-tab-btn.active { color:#ffa726; border-bottom-color:#ffa726; }
         .sub-tab-content { display:none; }
         .sub-tab-content.active { display:block; }
 
@@ -2311,6 +2313,7 @@
             <button class="main-tab-btn" data-color="purple" data-tab="gateway" onclick="switchMainTab('gateway')">网关认证</button>
             <button class="main-tab-btn" data-color="red" data-tab="scanner" onclick="switchMainTab('scanner')">安全扫描</button>
             <button class="main-tab-btn" data-color="cyan" data-tab="ai" onclick="switchMainTab('ai')">AI 安全</button>
+            <button class="main-tab-btn" data-color="yellow" data-tab="master" onclick="switchMainTab('master')">节点管理</button>
         </div>
 
         <!-- ===== 安全看板标签页 ===== -->
@@ -3223,7 +3226,100 @@
                 </div>
             </div>
         </div>
-    </div>
+
+        <!-- ===== 节点管理标签页 ===== -->
+        <div id="mtab-master" class="main-tab-content">
+            <div class="sub-tab-bar sub-tab-yellow">
+                <button class="sub-tab-btn active" data-sub="overview" onclick="switchSubTab('master','overview')">节点概览</button>
+                <button class="sub-tab-btn" data-sub="add" onclick="switchSubTab('master','add');resetMasterForm()">添加节点</button>
+            </div>
+
+            <!-- 节点概览 -->
+            <div id="stab-master-overview" class="sub-tab-content active">
+                <div class="stats-row" id="masterStats" style="grid-template-columns: repeat(4, 1fr);">
+                    <div class="stat-card"><div class="stat-value" id="masterTotalCount">0</div><div class="stat-label">总节点数</div></div>
+                    <div class="stat-card"><div class="stat-value" style="color:var(--accent-green);" id="masterOnlineCount">0</div><div class="stat-label">在线节点</div></div>
+                    <div class="stat-card"><div class="stat-value" style="color:var(--accent-red);" id="masterOfflineCount">0</div><div class="stat-label">离线节点</div></div>
+                    <div class="stat-card"><div class="stat-value" style="color:var(--accent-cyan);" id="masterSecgateCount">0</div><div class="stat-label">SecGate 节点</div></div>
+                </div>
+
+                <!-- SecGate 节点快速切换 -->
+                <div class="section-title" style="margin-top:24px;">SecGate 节点快速切换</div>
+                <div id="masterSecgateGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:24px;">
+                    <div style="color:var(--text-secondary);font-size:13px;padding:20px;text-align:center;">暂无 SecGate 节点</div>
+                </div>
+
+                <!-- 全部节点表格 -->
+                <div class="section-title">全部节点</div>
+                <div style="overflow-x:auto;">
+                    <table class="log-table" id="masterNodesTable">
+                        <thead><tr>
+                            <th>名称</th><th>主机</th><th>端口</th><th>用户</th><th>认证</th><th>状态</th><th>SecGate</th><th>最后检测</th><th>操作</th>
+                        </tr></thead>
+                        <tbody id="masterNodesBody">
+                            <tr><td colspan="9" style="text-align:center;color:var(--text-secondary);">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 添加/编辑节点 -->
+            <div id="stab-master-add" class="sub-tab-content">
+                <div style="max-width:560px;">
+                    <div class="section-title" id="masterFormTitle">添加新节点</div>
+                    <input type="hidden" id="masterEditId" value="">
+                    <div style="display:flex;flex-direction:column;gap:14px;">
+                        <div>
+                            <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px;">名称</label>
+                            <input id="masterAddName" type="text" placeholder="例: 生产服务器-1" style="width:100%;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:14px;box-sizing:border-box;">
+                        </div>
+                        <div style="display:grid;grid-template-columns:3fr 1fr;gap:12px;">
+                            <div>
+                                <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px;">主机地址</label>
+                                <input id="masterAddHost" type="text" placeholder="IP 或域名" style="width:100%;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:14px;box-sizing:border-box;">
+                            </div>
+                            <div>
+                                <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px;">端口</label>
+                                <input id="masterAddPort" type="number" value="22" style="width:100%;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:14px;box-sizing:border-box;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px;">用户名</label>
+                            <input id="masterAddUser" type="text" value="root" style="width:100%;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:14px;box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px;">认证方式</label>
+                            <select id="masterAuthType" onchange="toggleMasterAuth()" style="width:100%;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:14px;box-sizing:border-box;">
+                                <option value="key_file">密钥文件（自动检测本机 ~/.ssh/ 密钥）</option>
+                                <option value="password">密码</option>
+                                <option value="key">粘贴私钥内容</option>
+                            </select>
+                        </div>
+                        <div id="masterFieldPassword" style="display:none;">
+                            <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px;">密码</label>
+                            <input id="masterAddPassword" type="password" placeholder="SSH 密码" style="width:100%;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:14px;box-sizing:border-box;">
+                        </div>
+                        <div id="masterFieldKey" style="display:none;">
+                            <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px;">私钥内容</label>
+                            <textarea id="masterAddPrivateKey" placeholder="粘贴 SSH 私钥内容（-----BEGIN ... KEY-----）" rows="6" style="width:100%;padding:10px 12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:13px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+                        </div>
+                        <div style="display:flex;gap:12px;margin-top:8px;">
+                            <button onclick="testMasterNode()" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:10px 24px;border-radius:8px;font-weight:600;cursor:pointer;font-size:14px;">
+                                测试连接
+                            </button>
+                            <button onclick="saveMasterNode()" id="masterSaveBtn" style="background:linear-gradient(135deg,#ffa726,#ffca28);color:#1a1a2e;border:none;padding:10px 24px;border-radius:8px;font-weight:600;cursor:pointer;font-size:14px;">
+                                添加节点
+                            </button>
+                            <button onclick="resetMasterForm();switchSubTab('master','overview')" style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);padding:10px 18px;border-radius:8px;cursor:pointer;font-size:14px;">
+                                取消
+                            </button>
+                        </div>
+                        <div id="masterAddResult" style="display:none;margin-top:8px;padding:12px;border-radius:6px;font-size:13px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div><!-- /main-content -->
 
     <!-- Toast 提示 -->
     <div class="gw-toast" id="gwToast"></div>
@@ -3277,6 +3373,7 @@ function switchMainTab(tab) {
         else if (tab === 'gateway') loadGatewayData();
         else if (tab === 'scanner') loadScanData();
         else if (tab === 'ai') { if (typeof loadAISecurityData === 'function') loadAISecurityData(); }
+        else if (tab === 'master') loadMasterData();
     }
     setTimeout(resizeAllCharts, 100);
     history.replaceState(null, '', '#' + tab);
@@ -3310,7 +3407,7 @@ function resizeAllCharts() {
 // 页面加载时从 URL hash 中解析并切换标签
 (function() {
     const hash = location.hash.replace('#', '');
-    if (hash && ['dashboard', 'services', 'gateway', 'scanner', 'ai'].includes(hash)) {
+    if (hash && ['dashboard', 'services', 'gateway', 'scanner', 'ai', 'master'].includes(hash)) {
         switchMainTab(hash);
     }
 })();
@@ -5940,8 +6037,227 @@ function refreshAll() {
     else if (tab === 'gateway') loadGatewayData();
     else if (tab === 'scanner') loadScanData();
     else if (tab === 'ai') { if (typeof loadAISecurityData === 'function') loadAISecurityData(); }
+    else if (tab === 'master') loadMasterData();
     _tabDataTime[tab] = Date.now();
     setTimeout(function(){ _refreshing = false; }, 2000);
+}
+
+/* ===== 节点管理 JS ===== */
+
+function loadMasterData() {
+    fetch('/api/master/nodes')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) return;
+            var nodes = data.nodes || [];
+            document.getElementById('masterTotalCount').textContent = nodes.length;
+            document.getElementById('masterOnlineCount').textContent = nodes.filter(n => n.status === 'online').length;
+            document.getElementById('masterOfflineCount').textContent = nodes.filter(n => n.status === 'offline').length;
+            document.getElementById('masterSecgateCount').textContent = nodes.filter(n => n.secgate && n.secgate.installed).length;
+            renderMasterSecgateGrid(nodes);
+            renderMasterNodesTable(nodes);
+            // 没有节点时自动跳转到"添加节点"标签
+            if (nodes.length === 0) {
+                var addBtn = document.querySelector('#mtab-master .master-sub-btn[data-stab="master-add"]');
+                if (addBtn) addBtn.click();
+            }
+        })
+        .catch(function(){});
+}
+
+function renderMasterSecgateGrid(nodes) {
+    var grid = document.getElementById('masterSecgateGrid');
+    var sgNodes = nodes.filter(n => n.secgate && n.secgate.installed);
+    if (sgNodes.length === 0) {
+        grid.innerHTML = '<div style="color:var(--text-secondary);font-size:13px;padding:20px;text-align:center;">暂无 SecGate 节点</div>';
+        return;
+    }
+    grid.innerHTML = sgNodes.map(function(n) {
+        var ver = n.secgate.version || '未知';
+        var dashOk = n.secgate.dashboard_running;
+        var port = n.secgate.dashboard_port || 5000;
+        var statusDot = n.status === 'online' ? 'var(--accent-green)' : 'var(--accent-red)';
+        var link = 'http://' + n.host + ':' + port;
+        return '<div onclick="window.open(\'' + link + '\',\'_blank\')" style="background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;padding:16px;cursor:pointer;transition:all 0.2s;border-left:3px solid ' + (dashOk ? 'var(--accent-green)' : 'var(--accent-red)') + ';" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'\'">' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+            '<span style="width:8px;height:8px;border-radius:50%;background:' + statusDot + ';display:inline-block;"></span>' +
+            '<strong style="font-size:14px;color:var(--text-primary);">' + _esc(n.name) + '</strong></div>' +
+            '<div style="font-size:12px;color:var(--text-secondary);">' + _esc(n.host) + '</div>' +
+            '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">v' + _esc(ver) + ' | Dashboard: ' + (dashOk ? '<span style="color:var(--accent-green);">运行中</span>' : '<span style="color:var(--accent-red);">未运行</span>') + '</div>' +
+            '</div>';
+    }).join('');
+}
+
+function renderMasterNodesTable(nodes) {
+    var tbody = document.getElementById('masterNodesBody');
+    if (nodes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-secondary);">暂无节点，请添加</td></tr>';
+        return;
+    }
+    var authLabels = {password:'密码', key_file:'密钥', key:'粘贴密钥'};
+    tbody.innerHTML = nodes.map(function(n) {
+        var statusBadge = n.status === 'online'
+            ? '<span style="color:var(--accent-green);">在线</span>'
+            : (n.status === 'offline' ? '<span style="color:var(--accent-red);">离线</span>' : '<span style="color:var(--text-secondary);">未知</span>');
+        var sgText = '-';
+        if (n.secgate) {
+            sgText = n.secgate.installed
+                ? '<span style="color:var(--accent-cyan);">v' + _esc(n.secgate.version || '?') + '</span>'
+                : '<span style="color:var(--text-secondary);">未安装</span>';
+        }
+        return '<tr>' +
+            '<td>' + _esc(n.name) + '</td>' +
+            '<td><code>' + _esc(n.host) + '</code></td>' +
+            '<td>' + n.port + '</td>' +
+            '<td>' + _esc(n.username) + '</td>' +
+            '<td>' + (authLabels[n.auth_type] || n.auth_type) + '</td>' +
+            '<td>' + statusBadge + '</td>' +
+            '<td>' + sgText + '</td>' +
+            '<td style="font-size:12px;">' + (n.last_check || '-') + '</td>' +
+            '<td style="white-space:nowrap;">' +
+            '<button onclick="testMasterConn(\'' + n.id + '\')" style="background:none;border:1px solid var(--border-color);color:var(--text-primary);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;" title="测试连接">测试</button>' +
+            '<button onclick="checkMasterSG(\'' + n.id + '\')" style="background:none;border:1px solid var(--border-color);color:var(--accent-cyan);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;" title="检测SecGate">检测</button>' +
+            '<button onclick="editMasterNode(\'' + n.id + '\')" style="background:none;border:1px solid var(--border-color);color:var(--text-primary);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;" title="编辑">编辑</button>' +
+            '<button onclick="deleteMasterNode(\'' + n.id + '\')" style="background:none;border:1px solid var(--border-color);color:var(--accent-red);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:12px;" title="删除">&times;</button>' +
+            '</td></tr>';
+    }).join('');
+}
+
+function _esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function testMasterConn(id) {
+    showToast('正在测试连接...', '#ffa726');
+    fetch('/api/master/nodes/' + id + '/test', {method:'POST'})
+        .then(r => r.json())
+        .then(data => {
+            showToast(data.success ? data.message : ('连接失败: ' + data.error), data.success ? '#66bb6a' : '#ef5350');
+            loadMasterData();
+        }).catch(function(){ showToast('请求失败', '#ef5350'); });
+}
+
+function checkMasterSG(id) {
+    showToast('正在检测 SecGate...', '#ffa726');
+    fetch('/api/master/nodes/' + id + '/check-secgate', {method:'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                var sg = data.secgate;
+                showToast(sg.installed ? 'SecGate v' + sg.version + (sg.dashboard_running ? ' (Dashboard 运行中)' : '') : '未安装 SecGate', sg.installed ? '#66bb6a' : '#ffa726');
+            } else {
+                showToast('检测失败: ' + data.error, '#ef5350');
+            }
+            loadMasterData();
+        }).catch(function(){ showToast('请求失败', '#ef5350'); });
+}
+
+function deleteMasterNode(id) {
+    if (!confirm('确定删除此节点？')) return;
+    fetch('/api/master/nodes/' + id, {method:'DELETE'})
+        .then(r => r.json())
+        .then(data => {
+            showToast(data.success ? '节点已删除' : data.error, data.success ? '#66bb6a' : '#ef5350');
+            loadMasterData();
+        }).catch(function(){ showToast('请求失败', '#ef5350'); });
+}
+
+/* -- 表单：添加 / 编辑 -- */
+
+function toggleMasterAuth() {
+    var v = document.getElementById('masterAuthType').value;
+    document.getElementById('masterFieldPassword').style.display = v === 'password' ? '' : 'none';
+    document.getElementById('masterFieldKey').style.display = v === 'key' ? '' : 'none';
+}
+
+function resetMasterForm() {
+    document.getElementById('masterEditId').value = '';
+    document.getElementById('masterFormTitle').textContent = '添加新节点';
+    document.getElementById('masterSaveBtn').textContent = '添加节点';
+    document.getElementById('masterAddName').value = '';
+    document.getElementById('masterAddHost').value = '';
+    document.getElementById('masterAddPort').value = '22';
+    document.getElementById('masterAddUser').value = 'root';
+    document.getElementById('masterAuthType').value = 'key_file';
+    document.getElementById('masterAddPassword').value = '';
+    document.getElementById('masterAddPrivateKey').value = '';
+    document.getElementById('masterAddResult').style.display = 'none';
+    toggleMasterAuth();
+}
+
+function editMasterNode(id) {
+    fetch('/api/master/nodes/' + id)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) { showToast(data.error, '#ef5350'); return; }
+            var n = data.node;
+            document.getElementById('masterEditId').value = n.id;
+            document.getElementById('masterFormTitle').textContent = '编辑节点';
+            document.getElementById('masterSaveBtn').textContent = '保存修改';
+            document.getElementById('masterAddName').value = n.name;
+            document.getElementById('masterAddHost').value = n.host;
+            document.getElementById('masterAddPort').value = n.port;
+            document.getElementById('masterAddUser').value = n.username;
+            document.getElementById('masterAuthType').value = n.auth_type || 'key_file';
+            document.getElementById('masterAddPassword').value = n.password || '';
+            document.getElementById('masterAddPrivateKey').value = n.private_key || '';
+            document.getElementById('masterAddResult').style.display = 'none';
+            toggleMasterAuth();
+            switchSubTab('master', 'add');
+        }).catch(function(){ showToast('加载失败', '#ef5350'); });
+}
+
+function _getMasterFormData() {
+    var authType = document.getElementById('masterAuthType').value;
+    return {
+        name: document.getElementById('masterAddName').value.trim(),
+        host: document.getElementById('masterAddHost').value.trim(),
+        port: parseInt(document.getElementById('masterAddPort').value) || 22,
+        username: document.getElementById('masterAddUser').value.trim() || 'root',
+        auth_type: authType,
+        password: authType === 'password' ? document.getElementById('masterAddPassword').value : '',
+        private_key: authType === 'key' ? document.getElementById('masterAddPrivateKey').value : '',
+    };
+}
+
+function _showAddResult(msg, ok) {
+    var el = document.getElementById('masterAddResult');
+    el.style.display = '';
+    el.style.background = ok ? 'rgba(102,187,106,0.15)' : 'rgba(239,83,80,0.15)';
+    el.style.color = ok ? 'var(--accent-green)' : 'var(--accent-red)';
+    el.textContent = msg;
+}
+
+function testMasterNode() {
+    var d = _getMasterFormData();
+    if (!d.host) { _showAddResult('请输入主机地址', false); return; }
+    _showAddResult('正在测试连接...', true);
+    fetch('/api/master/test-connection', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(d)
+    }).then(r => r.json()).then(data => {
+        _showAddResult(data.success ? '连接成功! ' + data.message : '连接失败: ' + data.error, data.success);
+    }).catch(function(){ _showAddResult('请求失败', false); });
+}
+
+function saveMasterNode() {
+    var d = _getMasterFormData();
+    if (!d.host) { _showAddResult('请输入主机地址', false); return; }
+    var editId = document.getElementById('masterEditId').value;
+    var url = editId ? '/api/master/nodes/' + editId : '/api/master/nodes';
+    var method = editId ? 'PUT' : 'POST';
+    fetch(url, {
+        method: method, headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(d)
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            _showAddResult(editId ? '节点已更新!' : '节点添加成功!', true);
+            loadMasterData();
+            if (!editId) {
+                setTimeout(function(){ resetMasterForm(); switchSubTab('master','overview'); }, 800);
+            }
+        } else {
+            _showAddResult(data.error, false);
+        }
+    }).catch(function(){ _showAddResult('请求失败', false); });
 }
 
 // Initial load: dashboard tab is active by default

@@ -2185,8 +2185,6 @@ def api_unprotected_ports():
             continue
         if port in excluded:
             continue
-        if port >= 20000:
-            continue
         # 跳过网关认证服务自身的端口角色
         if svc.get("port_role") == "auth_service":
             continue
@@ -2413,6 +2411,21 @@ try:
     app.register_blueprint(scanner_bp)
 except ImportError:
     print("[WARN] scanner 模块未找到，安全扫描功能不可用")
+
+# 注册节点管理 Blueprint
+try:
+    from master import create_master_blueprint
+    master_bp = create_master_blueprint()
+
+    @master_bp.before_request
+    def master_auth():
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
+
+    app.register_blueprint(master_bp)
+except ImportError:
+    print("[WARN] master 模块未找到，节点管理功能不可用")
 
 
 # AlertEngine 模块级启动（兼容 gunicorn 多 worker 模式）
