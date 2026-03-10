@@ -69,9 +69,9 @@ curl -fsSL https://github.com/zzmlb/secgate/releases/latest/download/install.sh 
 |:---:|:---:|
 | ![网关认证](docs/screenshots/gateway-auth.png) | ![安全扫描](docs/screenshots/security-scan.png) |
 
-| AI 安全 — 服务发现 & API Key 检测 | 节点管理 — 多节点集中管控 |
-|:---:|:---:|
-| ![AI 安全](docs/screenshots/ai-security.png) | ![节点管理](docs/screenshots/master-node.png) |
+| AI 安全 — 服务发现 & API Key 检测 |
+|:---:|
+| ![AI 安全](docs/screenshots/ai-security.png) |
 
 ## 系统要求
 

@@ -67,9 +67,9 @@ curl -fsSL https://github.com/zzmlb/secgate/releases/latest/download/install.sh 
 |:---:|:---:|
 | ![Gateway](docs/screenshots/gateway-auth.png) | ![Scan](docs/screenshots/security-scan.png) |
 
-| AI Security — Service Discovery & API Key Detection | Node Management — Multi-node Control |
-|:---:|:---:|
-| ![AI Security](docs/screenshots/ai-security.png) | ![Node Management](docs/screenshots/master-node.png) |
+| AI Security — Service Discovery & API Key Detection |
+|:---:|
+| ![AI Security](docs/screenshots/ai-security.png) |
 
 ## Requirements
 
